@@ -527,22 +527,24 @@ export default function TabletDashboard() {
         </div>
       </header>
 
-      {/* Contenido Principal en 3 Columnas Responsivas */}
+      {/* Contenido Principal en 3 Columnas Responsivas que aprovechan todo el alto */}
       <div style={{ 
         display: 'grid', 
         gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', 
         gap: '24px', 
-        flex: 1 
+        flex: 1,
+        alignItems: 'stretch',
+        minHeight: 0
       }}>
         
         {/* COLUMNA 1: CITAS MÉDICAS */}
-        <section className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <h2 style={{ fontSize: '1.75rem', display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px' }}>
+        <section className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '20px', minHeight: 0, height: '100%' }}>
+          <h2 style={{ fontSize: '1.75rem', display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px', flexShrink: 0 }}>
             <Calendar size={28} color="var(--color-info)" />
             Citas Médicas
           </h2>
           
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', flex: 1, overflowY: 'auto', maxHeight: '55vh' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', flex: 1, overflowY: 'auto', minHeight: 0, paddingRight: '4px' }}>
             {appointments.length === 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '12px', padding: '40px 20px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
                 <Calendar size={48} strokeWidth={1} />
@@ -598,13 +600,13 @@ export default function TabletDashboard() {
         </section>
 
         {/* COLUMNA 2: MEDICAMENTOS */}
-        <section className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <h2 style={{ fontSize: '1.75rem', display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px' }}>
+        <section className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '20px', minHeight: 0, height: '100%' }}>
+          <h2 style={{ fontSize: '1.75rem', display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px', flexShrink: 0 }}>
             <Pill size={28} color="var(--color-success)" />
             Medicamentos del Día
           </h2>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', flex: 1, overflowY: 'auto', maxHeight: '55vh', paddingRight: '4px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', flex: 1, overflowY: 'auto', minHeight: 0, paddingRight: '6px' }}>
             {medications.length === 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '12px', padding: '40px 20px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
                 <Pill size={48} strokeWidth={1} />
@@ -688,13 +690,13 @@ export default function TabletDashboard() {
         </section>
 
         {/* COLUMNA 3: AVISOS IMPORTANTES */}
-        <section className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <h2 style={{ fontSize: '1.75rem', display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px' }}>
+        <section className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '20px', minHeight: 0, height: '100%' }}>
+          <h2 style={{ fontSize: '1.75rem', display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px', flexShrink: 0 }}>
             <Bell size={28} color="var(--color-warning)" />
             Avisos de la Familia
           </h2>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', flex: 1, overflowY: 'auto', maxHeight: '55vh' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', flex: 1, overflowY: 'auto', minHeight: 0, paddingRight: '4px' }}>
             {notices.length === 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '12px', padding: '40px 20px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
                 <Bell size={48} strokeWidth={1} />
