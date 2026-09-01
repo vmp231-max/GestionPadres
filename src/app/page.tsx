@@ -16,7 +16,9 @@ import {
   Info,
   RefreshCw,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Lock,
+  Delete
 } from 'lucide-react';
 
 interface Parent {
@@ -64,6 +66,71 @@ export default function TabletDashboard() {
   const [timeString, setTimeString] = useState<string>('');
   const [dateString, setDateString] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [authChecking, setAuthChecking] = useState<boolean>(true);
+  const [inputPin, setInputPin] = useState<string>('');
+  const [pinError, setPinError] = useState<string>('');
+  const [isVerifyingPin, setIsVerifyingPin] = useState<boolean>(false);
+
+  // 0. Comprobar sesión de acceso persistente de la tablet
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem('tablet_session_token');
+      if (token) {
+        const [expiresAtStr] = token.split('.');
+        const expiresAt = parseInt(expiresAtStr, 10);
+        if (!isNaN(expiresAt) && Date.now() < expiresAt) {
+          setIsAuthenticated(true);
+        } else {
+          localStorage.removeItem('tablet_session_token');
+          setIsAuthenticated(false);
+        }
+      } else {
+        setIsAuthenticated(false);
+      }
+    } catch (e) {
+      setIsAuthenticated(false);
+    } finally {
+      setAuthChecking(false);
+    }
+  }, []);
+
+  const handleVerifyPin = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!inputPin.trim() || isVerifyingPin) return;
+
+    setIsVerifyingPin(true);
+    setPinError('');
+
+    try {
+      const res = await fetch('/api/auth/verify-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: inputPin.trim() }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Clave incorrecta');
+      }
+
+      localStorage.setItem('tablet_session_token', data.token);
+      setIsAuthenticated(true);
+      setInputPin('');
+    } catch (err: any) {
+      setPinError(err.message || 'Clave incorrecta. Inténtalo de nuevo.');
+      setInputPin('');
+    } finally {
+      setIsVerifyingPin(false);
+    }
+  };
+
+  const handleLockSession = () => {
+    localStorage.removeItem('tablet_session_token');
+    setIsAuthenticated(false);
+    setSelectedParent(null);
+    setInputPin('');
+  };
 
   // 1. Cargar perfiles de padres al inicio
   useEffect(() => {
@@ -422,7 +489,7 @@ export default function TabletDashboard() {
     }
   };
 
-  if (loading) {
+  if (loading || authChecking) {
     return (
       <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '20px' }}>
         <div style={{ width: '50px', height: '50px', border: '5px solid var(--glass-border)', borderTopColor: 'var(--color-info)', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
@@ -431,6 +498,126 @@ export default function TabletDashboard() {
           @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         `}</style>
       </div>
+    );
+  }
+
+  // PANTALLA 0: Bloqueo de Seguridad (Clave PIN con sesión de 30 días)
+  if (!isAuthenticated) {
+    const handleKeypadPress = (val: string) => {
+      if (val === 'clear') {
+        setInputPin('');
+      } else if (val === 'backspace') {
+        setInputPin(prev => prev.slice(0, -1));
+      } else {
+        if (inputPin.length < 12) {
+          setInputPin(prev => prev + val);
+        }
+      }
+    };
+
+    return (
+      <main style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', justifyContent: 'center', alignItems: 'center', padding: '24px' }}>
+        <div className="bg-blobs">
+          <div className="blob blob-1"></div>
+          <div className="blob blob-2"></div>
+        </div>
+
+        <div className="glass-panel" style={{ width: '100%', maxWidth: '420px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', padding: '36px 28px', textAlign: 'center' }}>
+          <div style={{ width: '68px', height: '68px', borderRadius: '50%', background: 'rgba(6, 182, 212, 0.15)', border: '1px solid rgba(6, 182, 212, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-info)' }}>
+            <Lock size={32} />
+          </div>
+
+          <div>
+            <h1 style={{ fontSize: '1.8rem', fontWeight: 800 }}>Acceso Protegido</h1>
+            <p style={{ fontSize: '1rem', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
+              Introduce el PIN para acceder al Portal Médico
+            </p>
+          </div>
+
+          {pinError && (
+            <div style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', background: 'var(--color-error-bg)', color: 'var(--color-error)', fontSize: '0.9rem', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+              {pinError}
+            </div>
+          )}
+
+          <form onSubmit={handleVerifyPin} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            <div style={{ position: 'relative', width: '100%' }}>
+              <input
+                type="password"
+                inputMode="numeric"
+                value={inputPin}
+                onChange={(e) => setInputPin(e.target.value)}
+                placeholder="PIN de acceso"
+                autoFocus
+                style={{
+                  width: '100%',
+                  padding: '14px 20px',
+                  fontSize: '1.6rem',
+                  letterSpacing: '6px',
+                  textAlign: 'center',
+                  background: 'rgba(255, 255, 255, 0.04)',
+                  border: '2px solid var(--glass-border)',
+                  borderRadius: 'var(--radius-md)',
+                  color: '#ffffff',
+                  outline: 'none'
+                }}
+              />
+            </div>
+
+            {/* Teclado numérico táctil optimizado para tablet */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px', marginTop: '4px' }}>
+              {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((num) => (
+                <button
+                  key={num}
+                  type="button"
+                  onClick={() => handleKeypadPress(num)}
+                  className="btn btn-secondary"
+                  style={{ height: '56px', fontSize: '1.5rem', fontWeight: 700, borderRadius: 'var(--radius-md)' }}
+                >
+                  {num}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => handleKeypadPress('clear')}
+                className="btn btn-secondary"
+                style={{ height: '56px', fontSize: '0.9rem', fontWeight: 600, borderRadius: 'var(--radius-md)', color: 'var(--color-text-muted)' }}
+              >
+                Borrar
+              </button>
+              <button
+                type="button"
+                onClick={() => handleKeypadPress('0')}
+                className="btn btn-secondary"
+                style={{ height: '56px', fontSize: '1.5rem', fontWeight: 700, borderRadius: 'var(--radius-md)' }}
+              >
+                0
+              </button>
+              <button
+                type="button"
+                onClick={() => handleKeypadPress('backspace')}
+                className="btn btn-secondary"
+                style={{ height: '56px', fontSize: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 'var(--radius-md)' }}
+              >
+                <Delete size={20} />
+              </button>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isVerifyingPin || !inputPin.trim()}
+              className="btn btn-primary"
+              style={{ width: '100%', height: '56px', fontSize: '1.15rem', fontWeight: 700, marginTop: '8px', borderRadius: 'var(--radius-md)' }}
+            >
+              {isVerifyingPin ? 'Verificando...' : 'Desbloquear'}
+            </button>
+          </form>
+
+          <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', lineHeight: 1.4 }}>
+            🔒 Este dispositivo recordará el acceso durante 30 días sin volver a solicitar el PIN.
+          </p>
+        </div>
+      </main>
     );
   }
 
@@ -485,6 +672,26 @@ export default function TabletDashboard() {
             </button>
           ))}
         </div>
+
+        <button
+          onClick={handleLockSession}
+          style={{
+            marginTop: '50px',
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--color-text-muted)',
+            fontSize: '0.95rem',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '8px 16px',
+            borderRadius: 'var(--radius-sm)'
+          }}
+        >
+          <Lock size={16} />
+          <span>Bloquear dispositivo</span>
+        </button>
       </main>
     );
   }
