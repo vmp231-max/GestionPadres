@@ -29,6 +29,7 @@ interface Medication {
   name: string;
   dose: string;
   frequency: string;
+  period?: string;
   comments?: string;
 }
 
@@ -240,7 +241,7 @@ export default function AdminPortal() {
   };
 
   const addEmptyParsedMed = () => {
-    setParsedMeds([...parsedMeds, { name: '', dose: '', frequency: '', comments: '' }]);
+    setParsedMeds([...parsedMeds, { name: '', dose: '', frequency: '', period: 'Mañana', comments: '' }]);
   };
 
   const removeParsedMed = (index: number) => {
@@ -266,6 +267,7 @@ export default function AdminPortal() {
         name: med.name,
         dose: med.dose,
         frequency: med.frequency,
+        period: med.period || 'Mañana',
         comments: med.comments || '',
         active: true
       }));
@@ -686,8 +688,21 @@ export default function AdminPortal() {
                   activeMeds.map(med => (
                     <div key={med.id} className="glass-card" style={{ padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem' }}>
                       <div>
-                        <strong style={{ fontSize: '1rem', color: 'var(--color-text-primary)' }}>{med.name}</strong>
-                        <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <strong style={{ fontSize: '1rem', color: 'var(--color-text-primary)' }}>{med.name}</strong>
+                          <span style={{ 
+                            fontSize: '0.75rem', 
+                            fontWeight: 700, 
+                            padding: '2px 8px', 
+                            borderRadius: '10px', 
+                            background: 'rgba(59, 130, 246, 0.15)', 
+                            color: '#60a5fa',
+                            border: '1px solid rgba(59, 130, 246, 0.3)'
+                          }}>
+                            {med.period === 'Mediodia' ? '🍽️ Mediodía' : med.period === 'Tarde' ? '⛅ Tarde' : med.period === 'Noche' ? '🌙 Noche' : '☀️ Mañana'}
+                          </span>
+                        </div>
+                        <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem', marginTop: '2px' }}>
                           Dosis: {med.dose} | Frecuencia: {med.frequency}
                         </div>
                         {med.comments && <div style={{ color: 'var(--color-warning)', fontSize: '0.8rem', marginTop: '2px' }}>💡 {med.comments}</div>}
@@ -757,7 +772,7 @@ export default function AdminPortal() {
                         </div>
                       </div>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.5fr', gap: '12px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.1fr 1.5fr', gap: '12px' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Frecuencia</label>
                           <input 
@@ -766,6 +781,19 @@ export default function AdminPortal() {
                             onChange={(e) => handleParsedMedChange(index, 'frequency', e.target.value)}
                             style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none' }}
                           />
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                          <label style={{ fontSize: '0.8rem', color: 'var(--color-info)', fontWeight: 600 }}>Momento del Día</label>
+                          <select 
+                            value={med.period || 'Mañana'} 
+                            onChange={(e) => handleParsedMedChange(index, 'period', e.target.value)}
+                            style={{ padding: '8px 10px', background: '#0f172a', border: '1px solid var(--color-info)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontWeight: 600 }}
+                          >
+                            <option value="Mañana" style={{ background: '#0f172a' }}>☀️ Mañana</option>
+                            <option value="Mediodia" style={{ background: '#0f172a' }}>🍽️ Mediodia</option>
+                            <option value="Tarde" style={{ background: '#0f172a' }}>⛅ Tarde</option>
+                            <option value="Noche" style={{ background: '#0f172a' }}>🌙 Noche</option>
+                          </select>
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                           <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Comentarios / Avisos tomas</label>

@@ -42,8 +42,9 @@ export async function POST(req: NextRequest) {
 Para cada medicamento, identifica con precisión:
 1. El nombre comercial o genérico del medicamento.
 2. La dosis o presentación (ej. 500mg, 1 tableta, 10ml, 1 sobre).
-3. La frecuencia de las tomas y horarios recomendados (ej. Cada 8 horas, En el desayuno y cena, 1 vez al día por la mañana).
-4. Cualquier comentario, advertencia o instrucción de administración especial (ej. Tomar con las comidas, No tomar con leche, Mantener en nevera).
+3. La frecuencia de las tomas y horarios recomendados (ej. Cada 8 horas, En el desayuno y cena, 1 vez al día).
+4. El momento del día correspondiente para la toma principal: debe ser exactamente uno de estos valores: "Mañana", "Mediodia", "Tarde" o "Noche" (ej. Desayuno = Mañana, Comida/Almuerzo = Mediodia, Merienda = Tarde, Cena/Dormir = Noche).
+5. Cualquier comentario, advertencia o instrucción de administración especial (ej. Tomar con las comidas, No tomar con leche, Mantener en nevera).
 
 Asegúrate de traducir términos complejos o abreviaturas médicas a lenguaje claro y sencillo comprensible para personas mayores.`;
 
@@ -72,9 +73,13 @@ Asegúrate de traducir términos complejos o abreviaturas médicas a lenguaje cl
                   name: { type: 'STRING', description: 'Nombre del medicamento' },
                   dose: { type: 'STRING', description: 'Dosis (ej. 500mg, 1 comprimido)' },
                   frequency: { type: 'STRING', description: 'Frecuencia de las tomas (ej. Cada 12 horas)' },
+                  period: { 
+                    type: 'STRING', 
+                    description: 'Momento del día principal para la toma. Valores posibles: "Mañana", "Mediodia", "Tarde", "Noche"' 
+                  },
                   comments: { type: 'STRING', description: 'Comentarios adicionales (ej. Con el desayuno)' }
                 },
-                required: ['name', 'dose', 'frequency']
+                required: ['name', 'dose', 'frequency', 'period']
               }
             }
           },

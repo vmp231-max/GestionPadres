@@ -21,6 +21,7 @@ create table public.medications (
     name text not null,
     dose text not null,
     frequency text not null,
+    period text default 'Mañana' not null,
     comments text,
     active boolean default true not null,
     created_at timestamp with time zone default timezone('utc'::text, now()) not null,

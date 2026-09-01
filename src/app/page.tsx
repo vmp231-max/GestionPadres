@@ -37,6 +37,7 @@ interface Medication {
   name: string;
   dose: string;
   frequency: string;
+  period?: string;
   comments?: string;
   active: boolean;
 }
@@ -372,19 +373,31 @@ export default function TabletDashboard() {
     }
   };
 
-  // Clasificar medicamentos por franja horaria según comentarios/frecuencias comunes
-  const getMedicationByPeriod = (period: 'mañana' | 'tarde' | 'noche') => {
+  // Clasificar medicamentos por momento del día (Mañana, Mediodia, Tarde, Noche)
+  const getMedicationByPeriod = (period: 'mañana' | 'mediodia' | 'tarde' | 'noche') => {
     return medications.filter(med => {
-      const freq = (med.frequency + ' ' + (med.comments || '')).toLowerCase();
+      // 1. Si el medicamento tiene configurado explícitamente el campo 'period', respetarlo
+      if (med.period) {
+        const norm = med.period.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        const target = period.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+        if (norm.includes(target)) return true;
+        return false;
+      }
+
+      // 2. Heurística de retrocompatibilidad para registros antiguos sin campo 'period'
+      const freq = (med.frequency + ' ' + (med.comments || '')).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
       
       if (period === 'mañana') {
-        return freq.includes('mañana') || freq.includes('desayuno') || freq.includes('8h') || freq.includes('8 horas') || freq.includes('despertar') || (!freq.includes('tarde') && !freq.includes('noche') && !freq.includes('cena') && !freq.includes('almuerzo'));
+        return freq.includes('manana') || freq.includes('desayuno') || freq.includes('8h') || freq.includes('8 horas') || freq.includes('despertar') || (!freq.includes('tarde') && !freq.includes('noche') && !freq.includes('cena') && !freq.includes('almuerzo') && !freq.includes('comida') && !freq.includes('mediodia'));
+      }
+      if (period === 'mediodia') {
+        return freq.includes('mediodia') || freq.includes('comida') || freq.includes('almuerzo') || freq.includes('13h') || freq.includes('14h') || freq.includes('15h');
       }
       if (period === 'tarde') {
-        return freq.includes('tarde') || freq.includes('comida') || freq.includes('almuerzo') || freq.includes('mediodía') || freq.includes('12h') || freq.includes('14h') || freq.includes('16h');
+        return freq.includes('tarde') || freq.includes('merienda') || freq.includes('17h') || freq.includes('18h') || freq.includes('19h');
       }
       if (period === 'noche') {
-        return freq.includes('noche') || freq.includes('cena') || freq.includes('acostar') || freq.includes('dormir') || freq.includes('20h') || freq.includes('22h');
+        return freq.includes('noche') || freq.includes('cena') || freq.includes('acostar') || freq.includes('dormir') || freq.includes('20h') || freq.includes('21h') || freq.includes('22h');
       }
       return false;
     });
@@ -598,12 +611,12 @@ export default function TabletDashboard() {
                 <p style={{ fontSize: '1.25rem' }}>No hay medicamentos activos cargados</p>
               </div>
             ) : (
-              (['mañana', 'tarde', 'noche'] as const).map(period => {
+              (['mañana', 'mediodia', 'tarde', 'noche'] as const).map(period => {
                 const list = getMedicationByPeriod(period);
                 if (list.length === 0) return null;
 
-                const iconMap = { mañana: '☀️', tarde: '⛅', noche: '🌙' };
-                const titleMap = { mañana: 'Mañana', tarde: 'Tarde', noche: 'Noche' };
+                const iconMap = { mañana: '☀️', mediodia: '🍽️', tarde: '⛅', noche: '🌙' };
+                const titleMap = { mañana: 'Mañana (Desayuno)', mediodia: 'Mediodía (Comida)', tarde: 'Tarde (Merienda)', noche: 'Noche (Cena / Acostar)' };
 
                 return (
                   <div key={period} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
