@@ -169,14 +169,16 @@ export default function TabletDashboard() {
   // 5. Cargar datos específicos de un padre (Citas, Medicamentos, Avisos)
   const loadParentData = useCallback(async (parentId: string) => {
     try {
-      const now = new Date().toISOString();
+      // Mostrar citas desde el inicio del día actual (00:00) para que no desaparezcan las de hoy
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
 
       // Citas médicas (de hoy en adelante)
       const { data: appts, error: apptsError } = await supabase
         .from('appointments')
         .select('*')
         .eq('parent_id', parentId)
-        .gte('end_time', now)
+        .gte('end_time', todayStart.toISOString())
         .order('start_time', { ascending: true });
 
       if (apptsError) throw apptsError;
@@ -256,7 +258,52 @@ export default function TabletDashboard() {
     };
   }, [selectedParent, loadParentData, speakMessage]);
 
-  // 7. Confirmar lectura de aviso
+  // 7. Sincronización automática de Google Calendar cada 5 horas (desde la tablet)
+  useEffect(() => {
+    const SYNC_INTERVAL_MS = 5 * 60 * 60 * 1000;
+    const STORAGE_KEY = 'tablet_last_calendar_sync_time';
+
+    const runAutoSync = async () => {
+      try {
+        const lastSyncStr = localStorage.getItem(STORAGE_KEY);
+        const lastSync = lastSyncStr ? parseInt(lastSyncStr, 10) : 0;
+        const now = Date.now();
+
+        if (!lastSync || now - lastSync >= SYNC_INTERVAL_MS) {
+          console.log('[Tablet] Ejecutando sincronización periódica de citas (cada 5 horas)...');
+          const res = await fetch('/api/calendar/sync');
+          if (res.ok) {
+            localStorage.setItem(STORAGE_KEY, now.toString());
+            if (selectedParent) {
+              loadParentData(selectedParent.id);
+            }
+          }
+        }
+      } catch (err) {
+        console.error('[Tablet] Error en la sincronización periódica de calendario:', err);
+      }
+    };
+
+    runAutoSync();
+
+    // Comprobar cada 10 minutos si ya transcurrieron las 5 horas
+    const intervalId = setInterval(runAutoSync, 10 * 60 * 1000);
+
+    // Comprobar al reactivarse la pantalla o pestaña
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        runAutoSync();
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [selectedParent, loadParentData]);
+
+  // 8. Confirmar lectura de aviso
   const acknowledgeNotice = async (noticeId: string) => {
     try {
       const { error } = await supabase

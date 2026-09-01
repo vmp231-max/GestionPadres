@@ -16,7 +16,7 @@ Aplicación web integral y accesible diseñada para ejecutarse en una tablet par
 
 ### ⚙️ Panel de Administración - `/admin`
 - **Acceso Protegido:** Autenticación segura mediante Supabase Auth.
-- **Sincronización con Google Calendar:** Conexión transparente mediante Cuenta de Servicio de Google (JWT) para descargar y actualizar las citas médicas de Mamá y Papá.
+- **Sincronización Automática cada 5 horas:** Descarga y actualización automática de citas de Google Calendar de Mamá y Papá cada 5 horas (mediante temporizador en servidor Next.js `instrumentation.ts`, auto-chequeo en la tablet al estar activa/despertar y soporte para cron de Vercel). Permite además sincronización manual bajo demanda en un clic.
 - **Importación Inteligente de Recetas (Gemini IA):** Subida de recetas médicas en PDF y análisis automático mediante Gemini Flash para estructurar medicamentos, dosis, frecuencias y comentarios. Permite editar antes de guardar y activar en la tablet.
 - **Gestión de Avisos:** Envío de mensajes a Mamá, Papá o Ambos con selección de prioridad (Info, Advertencia, Alerta) y monitorización de lectura (hora de confirmación).
 

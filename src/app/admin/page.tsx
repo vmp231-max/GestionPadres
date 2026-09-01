@@ -454,10 +454,16 @@ export default function AdminPortal() {
         {/* SECCIÓN 1: CALENDARIO */}
         <section className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px' }}>
-            <h2 style={{ fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Calendar size={22} color="var(--color-info)" />
-              Sincronización de Citas
-            </h2>
+            <div>
+              <h2 style={{ fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Calendar size={22} color="var(--color-info)" />
+                Sincronización de Citas
+              </h2>
+              <span style={{ fontSize: '0.8rem', color: 'var(--color-success)', display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--color-success)', display: 'inline-block' }}></span>
+                Automática cada 5 horas (Tablet y Servidor)
+              </span>
+            </div>
             <button 
               onClick={handleCalendarSync} 
               disabled={isSyncing}
