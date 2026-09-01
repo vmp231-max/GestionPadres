@@ -93,3 +93,8 @@ create policy "Permitir gestión completa de citas a cualquiera" on public.appoi
 -- Políticas para 'notices' que permiten lectura y escritura completa
 create policy "Permitir gestión completa de avisos a cualquiera" on public.notices
     for all using (true);
+
+-- 6. Habilitar Supabase Realtime para que los avisos, citas y medicación lleguen en tiempo real
+alter publication supabase_realtime add table public.notices;
+alter publication supabase_realtime add table public.medications;
+alter publication supabase_realtime add table public.appointments;

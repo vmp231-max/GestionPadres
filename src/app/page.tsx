@@ -13,7 +13,8 @@ import {
   Clock, 
   MapPin, 
   AlertTriangle,
-  Info
+  Info,
+  RefreshCw
 } from 'lucide-react';
 
 interface Parent {
@@ -215,32 +216,29 @@ export default function TabletDashboard() {
 
     loadParentData(selectedParent.id);
 
-    // 6. Suscripción en Tiempo Real con Supabase para Avisos y Medicamentos
+    // 6. Suscripción en Tiempo Real con Supabase para Avisos, Medicamentos y Citas
+    const channelName = `tablet-realtime-${selectedParent.id}-${Date.now()}`;
     const channel = supabase
-      .channel('table-db-changes')
+      .channel(channelName)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'notices' },
         (payload) => {
-          console.log('Cambio en avisos:', payload);
-          // Si hay una inserción de un aviso no leído para este padre o ambos
+          console.log('[Realtime] Cambio detectado en avisos:', payload);
           if (payload.eventType === 'INSERT') {
             const newNotice = payload.new as Notice;
             if (!newNotice.is_read && (newNotice.parent_id === selectedParent.id || newNotice.parent_id === null)) {
-              setNotices(prev => [newNotice, ...prev]);
-              // Leer en voz alta el nuevo aviso recibido
               speakMessage(`Nuevo aviso importante: ${newNotice.message}`);
             }
-          } else if (payload.eventType === 'UPDATE' || payload.eventType === 'DELETE') {
-            // Recargar datos
-            loadParentData(selectedParent.id);
           }
+          loadParentData(selectedParent.id);
         }
       )
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'medications' },
         () => {
+          console.log('[Realtime] Cambio detectado en medicamentos');
           loadParentData(selectedParent.id);
         }
       )
@@ -248,13 +246,62 @@ export default function TabletDashboard() {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'appointments' },
         () => {
+          console.log('[Realtime] Cambio detectado en citas');
           loadParentData(selectedParent.id);
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        console.log('[Realtime] Estado de suscripción:', status);
+      });
+
+    // 7. Refresco automático de datos cada hora (y sondeo rápido de avisos cada 20s)
+    const HOURLY_REFRESH_MS = 60 * 60 * 1000; // 1 hora
+    const hourlyTimer = setInterval(() => {
+      console.log('[Tablet] Ejecutando refresco automático programado cada hora...');
+      loadParentData(selectedParent.id);
+    }, HOURLY_REFRESH_MS);
+
+    // Sondeo de respaldo para avisos cada 20 segundos
+    const NOTICE_POLL_MS = 20 * 1000;
+    const noticePollTimer = setInterval(async () => {
+      try {
+        const { data: ntc, error: ntcError } = await supabase
+          .from('notices')
+          .select('*')
+          .or(`parent_id.eq.${selectedParent.id},parent_id.is.null`)
+          .eq('is_read', false)
+          .order('created_at', { ascending: false });
+
+        if (!ntcError && ntc) {
+          setNotices((current) => {
+            const currentIds = new Set(current.map(n => n.id));
+            const newOnes = ntc.filter(n => !currentIds.has(n.id));
+            if (newOnes.length > 0) {
+              console.log('[Avisos Poll] Nuevo aviso detectado:', newOnes[0]);
+              speakMessage(`Nuevo aviso: ${newOnes[0].message}`);
+            }
+            return ntc;
+          });
+        }
+      } catch (err) {
+        console.error('[Avisos Poll] Error en sondeo de respaldo:', err);
+      }
+    }, NOTICE_POLL_MS);
+
+    // Refrescar inmediatamente cuando la tablet se active o vuelva a estar visible
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('[Tablet] Pantalla activa: refrescando datos del dashboard...');
+        loadParentData(selectedParent.id);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       supabase.removeChannel(channel);
+      clearInterval(hourlyTimer);
+      clearInterval(noticePollTimer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [selectedParent, loadParentData, speakMessage]);
 
@@ -450,9 +497,20 @@ export default function TabletDashboard() {
         </div>
 
         {/* Reloj y Fecha gigante para accesibilidad */}
-        <div style={{ textAlign: 'right' }}>
-          <div style={{ fontSize: '3rem', fontWeight: 800, color: 'var(--color-text-primary)', lineHeight: 1 }}>{timeString}</div>
-          <div style={{ fontSize: '1.25rem', color: 'var(--color-text-secondary)', textTransform: 'capitalize', marginTop: '6px' }}>{dateString}</div>
+        {/* Reloj, Fecha gigante y botón de refresco manual */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', textAlign: 'right' }}>
+          <button
+            onClick={() => loadParentData(selectedParent.id)}
+            className="btn btn-secondary"
+            title="Refrescar datos ahora"
+            style={{ borderRadius: '50%', width: '56px', height: '56px', padding: 0 }}
+          >
+            <RefreshCw size={24} />
+          </button>
+          <div>
+            <div style={{ fontSize: '3rem', fontWeight: 800, color: 'var(--color-text-primary)', lineHeight: 1 }}>{timeString}</div>
+            <div style={{ fontSize: '1.25rem', color: 'var(--color-text-secondary)', textTransform: 'capitalize', marginTop: '6px' }}>{dateString}</div>
+          </div>
         </div>
       </header>
 
