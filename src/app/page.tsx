@@ -14,7 +14,9 @@ import {
   MapPin, 
   AlertTriangle,
   Info,
-  RefreshCw
+  RefreshCw,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 interface Parent {
@@ -58,6 +60,7 @@ export default function TabletDashboard() {
   const [medications, setMedications] = useState<Medication[]>([]);
   const [notices, setNotices] = useState<Notice[]>([]);
   const [takenMeds, setTakenMeds] = useState<string[]>([]);
+  const [showTakenMeds, setShowTakenMeds] = useState<boolean>(false);
   const [timeString, setTimeString] = useState<string>('');
   const [dateString, setDateString] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(true);
@@ -374,8 +377,13 @@ export default function TabletDashboard() {
   };
 
   // Clasificar medicamentos por momento del día (Mañana, Mediodia, Tarde, Noche)
-  const getMedicationByPeriod = (period: 'mañana' | 'mediodia' | 'tarde' | 'noche') => {
+  const getMedicationByPeriod = (period: 'mañana' | 'mediodia' | 'tarde' | 'noche', includeTaken: boolean = false) => {
     return medications.filter(med => {
+      // Si no se pide incluir las tomadas, excluir los medicamentos ya tomados hoy
+      if (!includeTaken && takenMeds.includes(med.id)) {
+        return false;
+      }
+
       // 1. Si el medicamento tiene configurado explícitamente el campo 'period', respetarlo
       if (med.period) {
         const norm = med.period.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -600,21 +608,38 @@ export default function TabletDashboard() {
         </section>
 
         {/* COLUMNA 2: MEDICAMENTOS */}
-        <section className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '20px', minHeight: 0, height: '100%' }}>
-          <h2 style={{ fontSize: '1.75rem', display: 'flex', alignItems: 'center', gap: '12px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px', flexShrink: 0 }}>
-            <Pill size={28} color="var(--color-success)" />
-            Medicamentos del Día
-          </h2>
+        <section className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '16px', minHeight: 0, height: '100%' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px', flexShrink: 0 }}>
+            <h2 style={{ fontSize: '1.75rem', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Pill size={28} color="var(--color-success)" />
+              Medicamentos del Día
+            </h2>
+            {medications.length > 0 && (
+              <span style={{ fontSize: '0.95rem', color: 'var(--color-text-secondary)', fontWeight: 600 }}>
+                {medications.filter(m => !takenMeds.includes(m.id)).length} pendientes
+              </span>
+            )}
+          </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', flex: 1, overflowY: 'auto', minHeight: 0, paddingRight: '6px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', flex: 1, overflowY: 'auto', minHeight: 0, paddingRight: '6px' }}>
             {medications.length === 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '12px', padding: '40px 20px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
                 <Pill size={48} strokeWidth={1} />
                 <p style={{ fontSize: '1.25rem' }}>No hay medicamentos activos cargados</p>
               </div>
+            ) : medications.filter(m => !takenMeds.includes(m.id)).length === 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '16px', padding: '40px 20px', textAlign: 'center' }}>
+                <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'var(--color-success-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-success)' }}>
+                  <Check size={44} strokeWidth={3} />
+                </div>
+                <h3 style={{ fontSize: '1.6rem', fontWeight: 800, color: 'var(--color-text-primary)' }}>¡Todo completado por hoy!</h3>
+                <p style={{ fontSize: '1.15rem', color: 'var(--color-text-secondary)', maxWidth: '340px' }}>
+                  Has tomado todos los medicamentos programados para el día de hoy.
+                </p>
+              </div>
             ) : (
               (['mañana', 'mediodia', 'tarde', 'noche'] as const).map(period => {
-                const list = getMedicationByPeriod(period);
+                const list = getMedicationByPeriod(period, false);
                 if (list.length === 0) return null;
 
                 const iconMap = { mañana: '☀️', mediodia: '🍽️', tarde: '⛅', noche: '🌙' };
@@ -628,65 +653,124 @@ export default function TabletDashboard() {
                     </h3>
                     
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                      {list.map(med => {
-                        const isTaken = takenMeds.includes(med.id);
-                        return (
-                          <div 
-                            key={med.id} 
-                            className="glass-card"
+                      {list.map(med => (
+                        <div 
+                          key={med.id} 
+                          className="glass-card"
+                          style={{ 
+                            display: 'flex', 
+                            justifyContent: 'space-between', 
+                            alignItems: 'center', 
+                            gap: '16px',
+                            padding: '16px',
+                            borderLeft: '4px solid var(--color-info)'
+                          }}
+                        >
+                          <div style={{ flex: 1 }}>
+                            <h4 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>{med.name}</h4>
+                            <p style={{ fontSize: '1.05rem', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
+                              Dosis: {med.dose} | {med.frequency}
+                            </p>
+                            {med.comments && (
+                              <p style={{ fontSize: '0.95rem', color: 'var(--color-warning)', marginTop: '4px', fontStyle: 'italic' }}>
+                                💡 {med.comments}
+                              </p>
+                            )}
+                          </div>
+                          
+                          <button
+                            onClick={() => toggleMedTaken(med.id)}
+                            className="btn btn-primary"
                             style={{ 
-                              display: 'flex', 
-                              justifyContent: 'space-between', 
-                              alignItems: 'center', 
-                              gap: '16px',
-                              padding: '16px',
-                              background: isTaken ? 'rgba(16, 185, 129, 0.05)' : 'rgba(255, 255, 255, 0.02)',
-                              borderLeft: isTaken ? '6px solid var(--color-success)' : '2px solid var(--glass-border)'
+                              minWidth: '120px', 
+                              height: '56px', 
+                              fontSize: '1.1rem',
+                              fontWeight: 700,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              gap: '8px'
                             }}
                           >
-                            <div style={{ flex: 1 }}>
-                              <h4 style={{ fontSize: '1.25rem', fontWeight: 700, textDecoration: isTaken ? 'line-through' : 'none', color: isTaken ? 'var(--color-text-muted)' : 'var(--color-text-primary)' }}>{med.name}</h4>
-                              <p style={{ fontSize: '1.05rem', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
-                                Dosis: {med.dose} | {med.frequency}
-                              </p>
-                              {med.comments && (
-                                <p style={{ fontSize: '0.95rem', color: 'var(--color-warning)', marginTop: '4px', fontStyle: 'italic' }}>
-                                  💡 {med.comments}
-                                </p>
-                              )}
-                            </div>
-                            
-                            <button
-                              onClick={() => toggleMedTaken(med.id)}
-                              className={`btn ${isTaken ? 'btn-success' : 'btn-secondary'}`}
-                              style={{ 
-                                minWidth: '120px', 
-                                height: '60px', 
-                                fontSize: '1.1rem',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                gap: '8px'
-                              }}
-                            >
-                              {isTaken ? (
-                                <>
-                                  <Check size={20} />
-                                  <span>¡Tomada!</span>
-                                </>
-                              ) : (
-                                <span>Tomar</span>
-                              )}
-                            </button>
-                          </div>
-                        );
-                      })}
+                            <Check size={20} />
+                            <span>Tomar</span>
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 );
               })
             )}
           </div>
+
+          {/* Cajón colapsable para consultar o desmarcar medicamentos ya tomados */}
+          {takenMeds.length > 0 && (
+            <div style={{ marginTop: 'auto', paddingTop: '12px', borderTop: '1px solid var(--glass-border)', flexShrink: 0 }}>
+              <button
+                onClick={() => setShowTakenMeds(!showTakenMeds)}
+                style={{ 
+                  width: '100%', 
+                  padding: '8px 12px', 
+                  fontSize: '0.95rem', 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  background: 'rgba(255, 255, 255, 0.03)',
+                  border: '1px solid var(--glass-border)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: 'var(--color-text-secondary)',
+                  cursor: 'pointer'
+                }}
+              >
+                <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Check size={16} color="var(--color-success)" />
+                  Ya tomados hoy ({takenMeds.length})
+                </span>
+                {showTakenMeds ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+              </button>
+
+              {showTakenMeds && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px', maxHeight: '160px', overflowY: 'auto' }}>
+                  {medications
+                    .filter(m => takenMeds.includes(m.id))
+                    .map(med => (
+                      <div 
+                        key={med.id} 
+                        style={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between', 
+                          alignItems: 'center', 
+                          padding: '8px 12px', 
+                          borderRadius: 'var(--radius-sm)', 
+                          background: 'rgba(16, 185, 129, 0.05)',
+                          border: '1px solid rgba(16, 185, 129, 0.2)',
+                          fontSize: '0.9rem'
+                        }}
+                      >
+                        <div>
+                          <strong style={{ textDecoration: 'line-through', color: 'var(--color-text-muted)' }}>{med.name}</strong>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)', marginLeft: '8px' }}>({med.dose})</span>
+                        </div>
+                        <button
+                          onClick={() => toggleMedTaken(med.id)}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: 'var(--color-info)',
+                            fontSize: '0.85rem',
+                            cursor: 'pointer',
+                            textDecoration: 'underline'
+                          }}
+                        >
+                          Desmarcar
+                        </button>
+                      </div>
+                    ))}
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         {/* COLUMNA 3: AVISOS IMPORTANTES */}
