@@ -14,9 +14,11 @@ import {
   LogOut, 
   Lock, 
   Mail, 
-  Check, 
-  Clock, 
-  AlertTriangle 
+  Clock,
+  Check,
+  AlertTriangle,
+  Pencil,
+  X
 } from 'lucide-react';
 
 interface Parent {
@@ -69,6 +71,27 @@ export default function AdminPortal() {
   const [parsedMeds, setParsedMeds] = useState<Medication[]>([]);
   const [isParsing, setIsParsing] = useState(false);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
+
+  // Edición y alta manual de medicamentos activos
+  const [editingMedId, setEditingMedId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<{
+    name: string;
+    dose: string;
+    frequency: string;
+    period: string;
+    comments: string;
+  }>({ name: '', dose: '', frequency: '', period: 'Mañana', comments: '' });
+
+  const [isAddingManualMed, setIsAddingManualMed] = useState<boolean>(false);
+  const [manualMedForm, setManualMedForm] = useState<{
+    name: string;
+    dose: string;
+    frequency: string;
+    period: string;
+    comments: string;
+  }>({ name: '', dose: '', frequency: '', period: 'Mañana', comments: '' });
+
+  const [isSavingMed, setIsSavingMed] = useState<boolean>(false);
 
   // Avisos
   const [notices, setNotices] = useState<Notice[]>([]);
@@ -309,6 +332,100 @@ export default function AdminPortal() {
       setActiveMeds(prev => prev.filter(m => m.id !== medId));
     } catch (err: any) {
       alert(`Error al desactivar: ${err.message || err}`);
+    }
+  };
+
+  // Comenzar edición de un medicamento activo
+  const startEditMed = (med: any) => {
+    setEditingMedId(med.id);
+    setEditForm({
+      name: med.name || '',
+      dose: med.dose || '',
+      frequency: med.frequency || '',
+      period: med.period || 'Mañana',
+      comments: med.comments || ''
+    });
+  };
+
+  const cancelEditMed = () => {
+    setEditingMedId(null);
+  };
+
+  // Guardar cambios del medicamento editado
+  const saveEditedMed = async (medId: string) => {
+    if (!editForm.name.trim()) {
+      alert('El nombre del medicamento no puede estar vacío.');
+      return;
+    }
+
+    setIsSavingMed(true);
+    try {
+      const { error } = await supabase
+        .from('medications')
+        .update({
+          name: editForm.name.trim(),
+          dose: editForm.dose.trim(),
+          frequency: editForm.frequency.trim(),
+          period: editForm.period || 'Mañana',
+          comments: editForm.comments.trim()
+        })
+        .eq('id', medId);
+
+      if (error) throw error;
+
+      setActiveMeds(prev => prev.map(m => m.id === medId ? {
+        ...m,
+        name: editForm.name.trim(),
+        dose: editForm.dose.trim(),
+        frequency: editForm.frequency.trim(),
+        period: editForm.period || 'Mañana',
+        comments: editForm.comments.trim()
+      } : m));
+
+      setEditingMedId(null);
+    } catch (err: any) {
+      alert(`Error al actualizar medicamento: ${err.message || err}`);
+    } finally {
+      setIsSavingMed(false);
+    }
+  };
+
+  // Guardar medicamento añadido manualmente
+  const saveManualMed = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualMedForm.name.trim() || !selectedParentId) {
+      alert('Por favor indica al menos el nombre del medicamento y selecciona el perfil (Mamá o Papá).');
+      return;
+    }
+
+    setIsSavingMed(true);
+    try {
+      const { data, error } = await supabase
+        .from('medications')
+        .insert([{
+          parent_id: selectedParentId,
+          name: manualMedForm.name.trim(),
+          dose: manualMedForm.dose.trim(),
+          frequency: manualMedForm.frequency.trim(),
+          period: manualMedForm.period || 'Mañana',
+          comments: manualMedForm.comments.trim(),
+          active: true
+        }])
+        .select();
+
+      if (error) throw error;
+
+      if (data && data[0]) {
+        setActiveMeds(prev => [...prev, data[0]]);
+      }
+
+      setIsAddingManualMed(false);
+      setManualMedForm({ name: '', dose: '', frequency: '', period: 'Mañana', comments: '' });
+      alert('¡Medicamento añadido y activado correctamente!');
+    } catch (err: any) {
+      alert(`Error al añadir medicamento: ${err.message || err}`);
+    } finally {
+      setIsSavingMed(false);
     }
   };
 
@@ -678,44 +795,252 @@ export default function AdminPortal() {
               </button>
             </div>
 
-            {/* Listado actual en la base de datos */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
-              <h3 style={{ fontSize: '1.1rem', color: 'var(--color-text-secondary)' }}>Medicinas Activas actualmente en la Tablet:</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '300px', overflowY: 'auto' }}>
-                {activeMeds.length === 0 ? (
-                  <p style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem', fontStyle: 'italic' }}>No hay medicamentos activos cargados para este padre.</p>
-                ) : (
-                  activeMeds.map(med => (
-                    <div key={med.id} className="glass-card" style={{ padding: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.9rem' }}>
-                      <div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <strong style={{ fontSize: '1rem', color: 'var(--color-text-primary)' }}>{med.name}</strong>
-                          <span style={{ 
-                            fontSize: '0.75rem', 
-                            fontWeight: 700, 
-                            padding: '2px 8px', 
-                            borderRadius: '10px', 
-                            background: 'rgba(59, 130, 246, 0.15)', 
-                            color: '#60a5fa',
-                            border: '1px solid rgba(59, 130, 246, 0.3)'
-                          }}>
-                            {med.period === 'Mediodia' ? '🍽️ Mediodía' : med.period === 'Tarde' ? '⛅ Tarde' : med.period === 'Noche' ? '🌙 Noche' : '☀️ Mañana'}
-                          </span>
-                        </div>
-                        <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem', marginTop: '2px' }}>
-                          Dosis: {med.dose} | Frecuencia: {med.frequency}
-                        </div>
-                        {med.comments && <div style={{ color: 'var(--color-warning)', fontSize: '0.8rem', marginTop: '2px' }}>💡 {med.comments}</div>}
-                      </div>
-                      <button 
-                        onClick={() => deactivateSingleMed(med.id)} 
-                        className="btn" 
-                        style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--color-error)', border: 'none', padding: '6px 10px', fontSize: '0.8rem' }}
-                      >
-                        Desactivar
-                      </button>
+            {/* Listado actual en la base de datos con Edición en Vivo */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <h3 style={{ fontSize: '1.1rem', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span>Medicinas Activas en la Tablet:</span>
+                  <span className="badge badge-info" style={{ fontSize: '0.75rem', padding: '2px 8px' }}>{activeMeds.length}</span>
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setIsAddingManualMed(!isAddingManualMed)}
+                  className="btn btn-secondary"
+                  style={{ padding: '6px 10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  {isAddingManualMed ? <X size={14} /> : <Plus size={14} />}
+                  <span>{isAddingManualMed ? 'Cancelar' : 'Añadir Manualmente'}</span>
+                </button>
+              </div>
+
+              {/* Formulario para añadir medicina manualmente sin PDF */}
+              {isAddingManualMed && (
+                <form onSubmit={saveManualMed} className="glass-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', borderLeft: '4px solid var(--color-success)', background: 'rgba(16, 185, 129, 0.04)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <strong style={{ fontSize: '0.95rem', color: 'var(--color-success)' }}>Añadir Medicina Directamente</strong>
+                    <button type="button" onClick={() => setIsAddingManualMed(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
+                      <X size={16} />
+                    </button>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Nombre *</label>
+                      <input 
+                        type="text" 
+                        required
+                        value={manualMedForm.name} 
+                        onChange={(e) => setManualMedForm(prev => ({ ...prev, name: e.target.value }))}
+                        placeholder="ej. Paracetamol"
+                        style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+                      />
                     </div>
-                  ))
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Dosis</label>
+                      <input 
+                        type="text" 
+                        value={manualMedForm.dose} 
+                        onChange={(e) => setManualMedForm(prev => ({ ...prev, dose: e.target.value }))}
+                        placeholder="ej. 1g o 500mg"
+                        style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+                      />
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Frecuencia</label>
+                      <input 
+                        type="text" 
+                        value={manualMedForm.frequency} 
+                        onChange={(e) => setManualMedForm(prev => ({ ...prev, frequency: e.target.value }))}
+                        placeholder="ej. 1 cada 8h"
+                        style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+                      />
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--color-info)' }}>Momento del Día</label>
+                      <select 
+                        value={manualMedForm.period} 
+                        onChange={(e) => setManualMedForm(prev => ({ ...prev, period: e.target.value }))}
+                        style={{ padding: '8px 10px', background: '#0f172a', border: '1px solid var(--color-info)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+                      >
+                        <option value="Mañana" style={{ background: '#0f172a' }}>☀️ Mañana</option>
+                        <option value="Mediodia" style={{ background: '#0f172a' }}>🍽️ Mediodía</option>
+                        <option value="Tarde" style={{ background: '#0f172a' }}>⛅ Tarde</option>
+                        <option value="Noche" style={{ background: '#0f172a' }}>🌙 Noche</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Comentarios / Avisos tomas</label>
+                    <input 
+                      type="text" 
+                      value={manualMedForm.comments} 
+                      onChange={(e) => setManualMedForm(prev => ({ ...prev, comments: e.target.value }))}
+                      placeholder="ej. Tomar con agua después de comer"
+                      style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                    <button type="button" onClick={() => setIsAddingManualMed(false)} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.85rem' }}>
+                      Cancelar
+                    </button>
+                    <button type="submit" disabled={isSavingMed} className="btn btn-success" style={{ padding: '6px 14px', fontSize: '0.85rem', fontWeight: 700 }}>
+                      <Check size={14} />
+                      <span>{isSavingMed ? 'Guardando...' : 'Guardar y Activar'}</span>
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Lista de medicamentos activos con modo lectura / edición */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
+                {activeMeds.length === 0 ? (
+                  <p style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem', fontStyle: 'italic', padding: '10px 0' }}>No hay medicamentos activos cargados para este padre.</p>
+                ) : (
+                  activeMeds.map(med => {
+                    const isEditing = editingMedId === med.id;
+
+                    if (isEditing) {
+                      return (
+                        <div key={med.id} className="glass-card" style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px', borderLeft: '4px solid var(--color-warning)', background: 'rgba(245, 158, 11, 0.04)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <strong style={{ fontSize: '0.9rem', color: 'var(--color-warning)' }}>Editando: {med.name}</strong>
+                            <button type="button" onClick={cancelEditMed} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
+                              <X size={16} />
+                            </button>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Nombre</label>
+                              <input 
+                                type="text" 
+                                value={editForm.name} 
+                                onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                                style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+                              />
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Dosis</label>
+                              <input 
+                                type="text" 
+                                value={editForm.dose} 
+                                onChange={(e) => setEditForm(prev => ({ ...prev, dose: e.target.value }))}
+                                style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+                              />
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Frecuencia</label>
+                              <input 
+                                type="text" 
+                                value={editForm.frequency} 
+                                onChange={(e) => setEditForm(prev => ({ ...prev, frequency: e.target.value }))}
+                                style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+                              />
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                              <label style={{ fontSize: '0.75rem', color: 'var(--color-info)' }}>Momento del Día</label>
+                              <select 
+                                value={editForm.period} 
+                                onChange={(e) => setEditForm(prev => ({ ...prev, period: e.target.value }))}
+                                style={{ padding: '6px 10px', background: '#0f172a', border: '1px solid var(--color-info)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+                              >
+                                <option value="Mañana" style={{ background: '#0f172a' }}>☀️ Mañana</option>
+                                <option value="Mediodia" style={{ background: '#0f172a' }}>🍽️ Mediodía</option>
+                                <option value="Tarde" style={{ background: '#0f172a' }}>⛅ Tarde</option>
+                                <option value="Noche" style={{ background: '#0f172a' }}>🌙 Noche</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                            <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Comentarios / Avisos tomas</label>
+                            <input 
+                              type="text" 
+                              value={editForm.comments} 
+                              onChange={(e) => setEditForm(prev => ({ ...prev, comments: e.target.value }))}
+                              placeholder="ej. Tomar con las comidas"
+                              style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+                            />
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                            <button type="button" onClick={cancelEditMed} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.85rem' }}>
+                              Cancelar
+                            </button>
+                            <button 
+                              type="button" 
+                              onClick={() => saveEditedMed(med.id)} 
+                              disabled={isSavingMed} 
+                              className="btn btn-success" 
+                              style={{ padding: '6px 14px', fontSize: '0.85rem', fontWeight: 700 }}
+                            >
+                              <Save size={14} />
+                              <span>{isSavingMed ? 'Guardando...' : 'Guardar Cambios'}</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div key={med.id} className="glass-card" style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', fontSize: '0.9rem' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                            <strong style={{ fontSize: '1rem', color: 'var(--color-text-primary)' }}>{med.name}</strong>
+                            <span style={{ 
+                              fontSize: '0.75rem', 
+                              fontWeight: 700, 
+                              padding: '2px 8px', 
+                              borderRadius: '10px', 
+                              background: 'rgba(59, 130, 246, 0.15)', 
+                              color: '#60a5fa',
+                              border: '1px solid rgba(59, 130, 246, 0.3)'
+                            }}>
+                              {med.period === 'Mediodia' ? '🍽️ Mediodía' : med.period === 'Tarde' ? '⛅ Tarde' : med.period === 'Noche' ? '🌙 Noche' : '☀️ Mañana'}
+                            </span>
+                          </div>
+                          <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem', marginTop: '3px' }}>
+                            Dosis: <strong>{med.dose || 'No especificada'}</strong> | Frecuencia: <strong>{med.frequency || 'No especificada'}</strong>
+                          </div>
+                          {med.comments && (
+                            <div style={{ color: 'var(--color-warning)', fontSize: '0.8rem', marginTop: '3px' }}>
+                              💡 {med.comments}
+                            </div>
+                          )}
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <button 
+                            type="button"
+                            onClick={() => startEditMed(med)} 
+                            className="btn btn-secondary" 
+                            style={{ padding: '6px 10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--color-info)' }}
+                            title="Editar este medicamento"
+                          >
+                            <Pencil size={14} />
+                            <span>Editar</span>
+                          </button>
+                          <button 
+                            type="button"
+                            onClick={() => deactivateSingleMed(med.id)} 
+                            className="btn" 
+                            style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--color-error)', border: 'none', padding: '6px 10px', fontSize: '0.8rem' }}
+                            title="Desactivar este medicamento de la tablet"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })
                 )}
               </div>
             </div>
