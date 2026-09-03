@@ -1340,11 +1340,18 @@ export default function AdminPortal() {
                   value={noticeParentId} 
                   onChange={(e) => setNoticeParentId(e.target.value)}
                   style={{ width: '100%', padding: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-md)', color: '#ffffff', outline: 'none' }}
+                  disabled={parents.length === 0}
                 >
-                  <option value="both" style={{ background: '#0a0f1d' }}>Ambos (Mamá y Papá)</option>
-                  {parents.map(p => (
-                    <option key={p.id} value={p.id} style={{ background: '#0a0f1d' }}>{p.name}</option>
-                  ))}
+                  {parents.length === 0 ? (
+                    <option value="" disabled style={{ background: '#0a0f1d' }}>No hay familiares registrados</option>
+                  ) : (
+                    <>
+                      <option value="both" style={{ background: '#0a0f1d' }}>Toda la familia (Todos los miembros)</option>
+                      {parents.map(p => (
+                        <option key={p.id} value={p.id} style={{ background: '#0a0f1d' }}>{p.name}</option>
+                      ))}
+                    </>
+                  )}
                 </select>
               </div>
 
@@ -1367,14 +1374,14 @@ export default function AdminPortal() {
               <textarea 
                 value={newNoticeText}
                 onChange={(e) => setNewNoticeText(e.target.value)}
-                placeholder="Escribe aquí el mensaje... ej: 'Hola mamá, te llamo a las 18:00'"
+                placeholder="Escribe aquí el mensaje... ej: 'Hola, te llamo a las 18:00'"
                 required
                 rows={3}
                 style={{ width: '100%', padding: '12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-md)', color: '#ffffff', outline: 'none', fontSize: '0.95rem', resize: 'vertical' }}
               />
             </div>
 
-            <button type="submit" className="btn btn-success" style={{ width: '100%', padding: '12px', fontWeight: 700 }}>
+            <button type="submit" disabled={parents.length === 0} className="btn btn-success" style={{ width: '100%', padding: '12px', fontWeight: 700 }}>
               <Plus size={16} />
               <span>Enviar Aviso en tiempo real</span>
             </button>
@@ -1398,7 +1405,7 @@ export default function AdminPortal() {
                             {ntc.type.toUpperCase()}
                           </span>
                           <span style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>
-                            Para: <strong>{ntc.parents?.name || 'Ambos'}</strong> | {date.toLocaleDateString('es-ES')} {date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                            Para: <strong>{ntc.parents?.name || 'Toda la familia'}</strong> | {date.toLocaleDateString('es-ES')} {date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
                           </span>
                         </div>
                         <p style={{ color: 'var(--color-text-primary)', fontSize: '0.95rem' }}>{ntc.message}</p>
@@ -1441,15 +1448,20 @@ export default function AdminPortal() {
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <label style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>Seleccionar Padre a Actualizar</label>
+                <label style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', fontWeight: 600 }}>Seleccionar Familiar</label>
                 <select 
                   value={selectedParentId} 
                   onChange={(e) => setSelectedParentId(e.target.value)}
                   style={{ width: '100%', padding: '10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-md)', color: '#ffffff', outline: 'none' }}
+                  disabled={parents.length === 0}
                 >
-                  {parents.map(p => (
-                    <option key={p.id} value={p.id} style={{ background: '#0a0f1d' }}>{p.name}</option>
-                  ))}
+                  {parents.length === 0 ? (
+                    <option value="" disabled style={{ background: '#0a0f1d' }}>No hay familiares registrados (añade uno arriba)</option>
+                  ) : (
+                    parents.map(p => (
+                      <option key={p.id} value={p.id} style={{ background: '#0a0f1d' }}>{p.name}</option>
+                    ))
+                  )}
                 </select>
               </div>
 
@@ -1469,12 +1481,13 @@ export default function AdminPortal() {
                 <Upload size={36} color="var(--color-info)" />
                 <div>
                   <p style={{ fontSize: '0.95rem', fontWeight: 600 }}>{pdfFile ? pdfFile.name : 'Haz clic para seleccionar el PDF'}</p>
-                  <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>PDF de receta médica de tu padre o madre</p>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', marginTop: '4px' }}>PDF de receta médica de tu familiar</p>
                 </div>
                 <input 
                   type="file" 
                   accept="application/pdf"
                   onChange={handlePdfUpload}
+                  disabled={parents.length === 0}
                   style={{ display: 'block', margin: '0 auto', fontSize: '0.85rem' }} 
                 />
               </div>
@@ -1616,8 +1629,10 @@ export default function AdminPortal() {
 
               {/* Lista de medicamentos activos con modo lectura / edición */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '450px', overflowY: 'auto', paddingRight: '4px' }}>
-                {activeMeds.length === 0 ? (
-                  <p style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem', fontStyle: 'italic', padding: '10px 0' }}>No hay medicamentos activos cargados para este padre.</p>
+                {parents.length === 0 ? (
+                  <p style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem', fontStyle: 'italic', padding: '10px 0' }}>No hay familiares registrados. Añade un familiar arriba para comenzar a gestionar su medicación.</p>
+                ) : activeMeds.length === 0 ? (
+                  <p style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem', fontStyle: 'italic', padding: '10px 0' }}>No hay medicamentos activos cargados para este familiar.</p>
                 ) : (
                   activeMeds.map(med => {
                     const isEditing = editingMedId === med.id;
