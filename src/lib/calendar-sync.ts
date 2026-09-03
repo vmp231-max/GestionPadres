@@ -74,21 +74,14 @@ export async function performCalendarSync(accountId?: string): Promise<CalendarS
     timeMax.setDate(timeMax.getDate() + 90);
 
     for (const parent of parents) {
-      // Determinar ID del calendario: configurado en base de datos o variable de entorno por nombre
-      let calId = parent.calendar_id;
-      if (!calId) {
-        if (parent.name.toLowerCase().includes('mamá') || parent.name.toLowerCase().includes('mama')) {
-          calId = process.env.GOOGLE_CALENDAR_ID_MAMA;
-        } else if (parent.name.toLowerCase().includes('papá') || parent.name.toLowerCase().includes('papa')) {
-          calId = process.env.GOOGLE_CALENDAR_ID_PAPA;
-        }
-      }
+      // Usar exclusivamente el ID de calendario configurado en la base de datos para este familiar
+      const calId = (parent.calendar_id || '').trim();
 
-      if (!calId || !calId.trim()) {
+      if (!calId) {
         syncResults.push({
           name: parent.name,
           status: 'skipped',
-          detail: 'ID de calendario no configurado (puedes añadirlo en /admin)',
+          detail: 'ID de calendario no configurado. Edita el familiar en el panel para asignarle su ID de Google Calendar.',
         });
         continue;
       }
