@@ -769,12 +769,20 @@ function getAvatarGradient(name: string, index: number) {
         </div>
 
         {parents.length === 0 ? (
-          <div className="glass-panel" style={{ padding: '36px', textAlign: 'center', maxWidth: '500px' }}>
-            <AlertTriangle size={40} color="var(--color-warning)" style={{ margin: '0 auto 16px' }} />
-            <h2 style={{ fontSize: '1.4rem', fontWeight: 700 }}>Sin familiares registrados</h2>
-            <p style={{ color: 'var(--color-text-secondary)', marginTop: '8px', fontSize: '1rem' }}>
-              No hay familiares dados de alta para esta cuenta. Accede al Panel de Administración (<strong>/admin</strong>) para añadir familiares.
+          <div className="glass-panel" style={{ padding: '36px', textAlign: 'center', maxWidth: '500px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+            <AlertTriangle size={40} color="var(--color-warning)" style={{ margin: '0 auto' }} />
+            <h2 style={{ fontSize: '1.4rem', fontWeight: 700 }}>Sin familiares en {linkedAccountName || 'esta cuenta'}</h2>
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.95rem', margin: 0 }}>
+              Esta tablet está conectada a la cuenta <strong>"{linkedAccountName || 'Cuenta Familiar'}"</strong>. Si deseas conectar con otra familia o volver a autenticarte, pulsa "Cambiar de Familia".
             </p>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '6px', flexWrap: 'wrap', justifyContent: 'center' }}>
+              <button onClick={handleUnlinkAccount} className="btn btn-secondary" style={{ padding: '8px 16px', fontSize: '0.9rem' }}>
+                🔄 Cambiar de Familia
+              </button>
+              <a href="/admin" className="btn btn-primary" style={{ padding: '8px 16px', fontSize: '0.9rem', textDecoration: 'none' }}>
+                ⚙️ Gestionar en /admin
+              </a>
+            </div>
           </div>
         ) : (
           <div style={{ display: 'flex', gap: '32px', flexWrap: 'wrap', justifyContent: 'center', maxWidth: '1000px', width: '100%' }}>
