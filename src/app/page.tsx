@@ -82,6 +82,8 @@ export default function TabletDashboard() {
   const [isVerifyingPin, setIsVerifyingPin] = useState<boolean>(false);
   const [linkedAccountId, setLinkedAccountId] = useState<string | null>(null);
   const [linkedAccountName, setLinkedAccountName] = useState<string>('');
+  const [availableAccounts, setAvailableAccounts] = useState<{ id: string; name: string }[]>([]);
+  const [selectedAccountId, setSelectedAccountId] = useState<string>('');
 
   // 0. Comprobar sesión de acceso persistente de la tablet
   useEffect(() => {
@@ -113,6 +115,27 @@ export default function TabletDashboard() {
     }
   }, []);
 
+  // Cargar lista de cuentas familiares para el selector si no está autenticado
+  useEffect(() => {
+    if (!isAuthenticated) {
+      fetch('/api/auth/accounts')
+        .then(res => res.json())
+        .then(data => {
+          const accs = data.accounts || [];
+          setAvailableAccounts(accs);
+          if (accs.length > 0) {
+            const prevAccId = localStorage.getItem('tablet_account_id');
+            if (prevAccId && accs.some((a: any) => a.id === prevAccId)) {
+              setSelectedAccountId(prevAccId);
+            } else {
+              setSelectedAccountId(accs[0].id);
+            }
+          }
+        })
+        .catch(err => console.error('Error al cargar cuentas familiares:', err));
+    }
+  }, [isAuthenticated]);
+
   const handleVerifyPin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!inputPin.trim() || isVerifyingPin) return;
@@ -124,7 +147,10 @@ export default function TabletDashboard() {
       const res = await fetch('/api/auth/verify-pin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pin: inputPin.trim() }),
+        body: JSON.stringify({ 
+          pin: inputPin.trim(),
+          accountId: selectedAccountId || undefined
+        }),
       });
 
       const data = await res.json();
@@ -165,12 +191,16 @@ export default function TabletDashboard() {
     setInputPin('');
   };
 
-  // 1. Cargar familiares pertenecientes a esta cuenta
+  // 1. Cargar familiares pertenecientes exclusivamente a esta cuenta
   const loadParents = useCallback(async () => {
+    if (!linkedAccountId) {
+      setParents([]);
+      return;
+    }
     try {
       setLoading(true);
       let query = supabase.from('parents').select('*').order('name', { ascending: true });
-      if (linkedAccountId && linkedAccountId !== 'default') {
+      if (linkedAccountId !== 'default') {
         query = query.eq('account_id', linkedAccountId);
       }
       const { data, error } = await query;
@@ -588,7 +618,41 @@ export default function TabletDashboard() {
             </div>
           )}
 
-          <form onSubmit={handleVerifyPin} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <form onSubmit={handleVerifyPin} style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {availableAccounts.length > 1 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', textAlign: 'left' }}>
+                <label style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', fontWeight: 600 }}>Familia a vincular:</label>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {availableAccounts.map(acc => {
+                    const isAccSelected = selectedAccountId === acc.id;
+                    return (
+                      <button
+                        key={acc.id}
+                        type="button"
+                        onClick={() => setSelectedAccountId(acc.id)}
+                        style={{
+                          flex: 1,
+                          minWidth: '120px',
+                          padding: '8px 12px',
+                          borderRadius: 'var(--radius-sm)',
+                          background: isAccSelected ? 'rgba(59, 130, 246, 0.25)' : 'rgba(255, 255, 255, 0.03)',
+                          border: isAccSelected ? '2px solid #3b82f6' : '1px solid var(--glass-border)',
+                          color: isAccSelected ? '#60a5fa' : 'var(--color-text-muted)',
+                          fontWeight: isAccSelected ? 700 : 500,
+                          cursor: 'pointer',
+                          fontSize: '0.9rem',
+                          textAlign: 'center',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        {acc.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             <div style={{ position: 'relative', width: '100%' }}>
               <input
                 type="password"

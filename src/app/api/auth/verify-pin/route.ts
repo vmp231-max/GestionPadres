@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
       const supabase = createClient(supabaseUrl, supabaseKey);
 
       if (accountId) {
-        // Verificar PIN contra una cuenta específica
+        // 1. Verificar PIN contra una cuenta específica
         const { data: account, error } = await supabase
           .from('accounts')
           .select('id, name, tablet_pin')
@@ -42,8 +42,8 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        const expectedAccountPin = (account.tablet_pin || defaultEnvPin).trim();
-        if (pin !== expectedAccountPin && pin !== defaultEnvPin) {
+        const expectedAccountPin = (account.tablet_pin || '1234').trim();
+        if (pin !== expectedAccountPin) {
           return NextResponse.json(
             { error: 'PIN incorrecto para esta familia. Inténtalo de nuevo.' },
             { status: 401 }
@@ -52,15 +52,40 @@ export async function POST(req: NextRequest) {
 
         validatedAccount = { id: account.id, name: account.name };
       } else {
-        // Si no se especifica accountId, buscar si coincide con el PIN de alguna cuenta registrada
+        // 2. Si no se especificó accountId, buscar cuentas en la base de datos
         const { data: accounts } = await supabase
           .from('accounts')
-          .select('id, name, tablet_pin');
+          .select('id, name, tablet_pin')
+          .order('name');
 
         if (accounts && accounts.length > 0) {
-          const matched = accounts.find(acc => (acc.tablet_pin || '').trim() === pin || pin === defaultEnvPin);
-          if (matched) {
-            validatedAccount = { id: matched.id, name: matched.name };
+          if (accounts.length === 1) {
+            const singleAcc = accounts[0];
+            const accPin = (singleAcc.tablet_pin || '1234').trim();
+            if (pin === accPin) {
+              validatedAccount = { id: singleAcc.id, name: singleAcc.name };
+            } else {
+              return NextResponse.json(
+                { error: 'PIN incorrecto. Inténtalo de nuevo.' },
+                { status: 401 }
+              );
+            }
+          } else {
+            // Múltiples cuentas: buscar coincidencia exacta
+            const exactMatches = accounts.filter(acc => (acc.tablet_pin || '1234').trim() === pin);
+            if (exactMatches.length === 1) {
+              validatedAccount = { id: exactMatches[0].id, name: exactMatches[0].name };
+            } else if (exactMatches.length > 1) {
+              return NextResponse.json(
+                { error: 'Existen múltiples familias con este PIN. Por favor selecciona tu familia en la pantalla.' },
+                { status: 400 }
+              );
+            } else {
+              return NextResponse.json(
+                { error: 'PIN o clave incorrecta. Inténtalo de nuevo.' },
+                { status: 401 }
+              );
+            }
           }
         }
       }
