@@ -304,10 +304,17 @@ export default function AdminPortal() {
         if (accData) {
           account = accData;
         } else {
-          // Crear cuenta por defecto si no existe
+          // Generar PIN único aleatorio
+          const { data: allAccs } = await supabase.from('accounts').select('tablet_pin');
+          const usedPins = new Set((allAccs || []).map((a: any) => a.tablet_pin));
+          let autoPin = Math.floor(1000 + Math.random() * 9000).toString();
+          while (usedPins.has(autoPin)) {
+            autoPin = Math.floor(1000 + Math.random() * 9000).toString();
+          }
+
           const { data: newAcc, error: createAccErr } = await supabase
             .from('accounts')
-            .insert([{ user_id: session.user.id, name: registerFamilyName.trim() || 'Mi Familia', tablet_pin: '1234' }])
+            .insert([{ user_id: session.user.id, name: registerFamilyName.trim() || 'Mi Familia', tablet_pin: autoPin }])
             .select()
             .single();
 
@@ -417,10 +424,19 @@ export default function AdminPortal() {
         if (error) throw error;
         if (data?.user) {
           const famName = registerFamilyName.trim() || 'Mi Familia';
+          
+          // Generar PIN único aleatorio
+          const { data: allAccs } = await supabase.from('accounts').select('tablet_pin');
+          const usedPins = new Set((allAccs || []).map((a: any) => a.tablet_pin));
+          let autoPin = Math.floor(1000 + Math.random() * 9000).toString();
+          while (usedPins.has(autoPin)) {
+            autoPin = Math.floor(1000 + Math.random() * 9000).toString();
+          }
+
           await supabase
             .from('accounts')
-            .insert([{ user_id: data.user.id, name: famName, tablet_pin: '1234' }]);
-          alert('¡Cuenta creada correctamente! Ahora puedes añadir manualmente a los miembros de tu familia.');
+            .insert([{ user_id: data.user.id, name: famName, tablet_pin: autoPin }]);
+          alert(`¡Cuenta creada correctamente! Tu PIN único para la tablet es "${autoPin}" (puedes cambiarlo en cualquier momento desde tu panel).`);
         }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -527,19 +543,44 @@ export default function AdminPortal() {
 
   // 5. Configuración de Cuenta y PIN
   const handleSavePin = async () => {
-    if (!accountPinInput.trim() || !currentAccount) return;
+    const cleanPin = accountPinInput.trim();
+    if (!cleanPin || !currentAccount) return;
+
+    if (cleanPin.length < 4) {
+      alert('El PIN debe tener al menos 4 dígitos o caracteres.');
+      return;
+    }
 
     try {
+      // Comprobar si otra cuenta ya tiene asignado este PIN
+      const { data: existing } = await supabase
+        .from('accounts')
+        .select('id, name')
+        .eq('tablet_pin', cleanPin)
+        .neq('id', currentAccount.id)
+        .maybeSingle();
+
+      if (existing) {
+        alert(`El PIN "${cleanPin}" ya está en uso por la familia "${existing.name}".\n\nCada familia debe tener un PIN único e irrepetible para que la tablet detecte automáticamente a tu familia al escribirlo. Por favor, elige un PIN diferente.`);
+        return;
+      }
+
       const { error } = await supabase
         .from('accounts')
-        .update({ tablet_pin: accountPinInput.trim() })
+        .update({ tablet_pin: cleanPin })
         .eq('id', currentAccount.id);
 
-      if (error) throw error;
+      if (error) {
+        if (error.code === '23505' || error.message?.includes('unique')) {
+          alert('Ese PIN ya está en uso por otra familia. Por favor elige otro PIN.');
+          return;
+        }
+        throw error;
+      }
 
-      setCurrentAccount(prev => prev ? { ...prev, tablet_pin: accountPinInput.trim() } : null);
+      setCurrentAccount(prev => prev ? { ...prev, tablet_pin: cleanPin } : null);
       setIsEditingPin(false);
-      alert('¡PIN de la Tablet actualizado correctamente!');
+      alert(`¡PIN de la Tablet actualizado a "${cleanPin}"!\nAhora al escribir "${cleanPin}" en la tablet se abrirá directamente el portal de tu familia.`);
     } catch (err: any) {
       alert(`Error al guardar PIN: ${err.message || err}`);
     }

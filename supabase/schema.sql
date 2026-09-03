@@ -8,7 +8,7 @@ create table if not exists public.accounts (
     id uuid default gen_random_uuid() primary key,
     user_id uuid references auth.users(id) on delete cascade unique,
     name text not null default 'Mi Familia',
-    tablet_pin text default '1234' not null,
+    tablet_pin text not null unique, -- Cada familia tiene un PIN único e irrepetible para inferir su perfil
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
