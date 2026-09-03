@@ -21,7 +21,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const defaultEnvPin = (process.env.TABLET_PIN || '1234').trim();
     let validatedAccount: { id: string; name: string } | null = null;
 
     if (supabaseUrl && supabaseKey) {
@@ -91,23 +90,18 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Si aún no se validó ninguna cuenta pero coincide con el PIN de entorno
     if (!validatedAccount) {
-      if (pin === defaultEnvPin) {
-        validatedAccount = { id: 'default', name: 'Mi Familia' };
-      } else {
-        return NextResponse.json(
-          { error: 'PIN o clave incorrecta. Inténtalo de nuevo.' },
-          { status: 401 }
-        );
-      }
+      return NextResponse.json(
+        { error: 'PIN o clave incorrecta. Inténtalo de nuevo.' },
+        { status: 401 }
+      );
     }
 
     // Calcular fecha de expiración en milisegundos
     const expiresAt = Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000;
 
     // Generar un token con firma HMAC para que no pueda ser alterado
-    const secret = process.env.SUPABASE_ANON_KEY || defaultEnvPin || 'secret_tablet_key';
+    const secret = supabaseKey || 'secret_tablet_session_key';
     const payload = `${expiresAt}:${validatedAccount.id}`;
     const signature = crypto.createHmac('sha256', secret).update(payload).digest('hex');
     const token = `${expiresAt}.${validatedAccount.id}.${signature}`;
