@@ -80,18 +80,27 @@ export default function TabletDashboard() {
   const [inputPin, setInputPin] = useState<string>('');
   const [pinError, setPinError] = useState<string>('');
   const [isVerifyingPin, setIsVerifyingPin] = useState<boolean>(false);
+  const [linkedAccountId, setLinkedAccountId] = useState<string | null>(null);
+  const [linkedAccountName, setLinkedAccountName] = useState<string>('');
 
   // 0. Comprobar sesión de acceso persistente de la tablet
   useEffect(() => {
     try {
       const token = localStorage.getItem('tablet_session_token');
+      const accId = localStorage.getItem('tablet_account_id');
+      const accName = localStorage.getItem('tablet_account_name') || 'Mi Familia';
+
       if (token) {
-        const [expiresAtStr] = token.split('.');
-        const expiresAt = parseInt(expiresAtStr, 10);
+        const parts = token.split('.');
+        const expiresAt = parseInt(parts[0], 10);
         if (!isNaN(expiresAt) && Date.now() < expiresAt) {
           setIsAuthenticated(true);
+          setLinkedAccountId(accId || (parts.length > 2 ? parts[1] : null));
+          setLinkedAccountName(accName);
         } else {
           localStorage.removeItem('tablet_session_token');
+          localStorage.removeItem('tablet_account_id');
+          localStorage.removeItem('tablet_account_name');
           setIsAuthenticated(false);
         }
       } else {
@@ -120,14 +129,20 @@ export default function TabletDashboard() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Clave incorrecta');
+        throw new Error(data.error || 'Clave o PIN incorrecto');
       }
 
       localStorage.setItem('tablet_session_token', data.token);
+      if (data.account) {
+        localStorage.setItem('tablet_account_id', data.account.id);
+        localStorage.setItem('tablet_account_name', data.account.name);
+        setLinkedAccountId(data.account.id);
+        setLinkedAccountName(data.account.name);
+      }
       setIsAuthenticated(true);
       setInputPin('');
     } catch (err: any) {
-      setPinError(err.message || 'Clave incorrecta. Inténtalo de nuevo.');
+      setPinError(err.message || 'Clave o PIN incorrecto. Inténtalo de nuevo.');
       setInputPin('');
     } finally {
       setIsVerifyingPin(false);
@@ -135,31 +150,45 @@ export default function TabletDashboard() {
   };
 
   const handleLockSession = () => {
+    setSelectedParent(null);
+  };
+
+  const handleUnlinkAccount = () => {
+    if (!confirm('¿Deseas desvincular esta tablet de la familia actual? Tendrás que volver a introducir el PIN para acceder.')) return;
     localStorage.removeItem('tablet_session_token');
+    localStorage.removeItem('tablet_account_id');
+    localStorage.removeItem('tablet_account_name');
     setIsAuthenticated(false);
     setSelectedParent(null);
+    setLinkedAccountId(null);
+    setLinkedAccountName('');
     setInputPin('');
   };
 
-  // 1. Cargar perfiles de padres al inicio
-  useEffect(() => {
-    async function loadParents() {
-      try {
-        const { data, error } = await supabase
-          .from('parents')
-          .select('*')
-          .order('name', { ascending: true });
-
-        if (error) throw error;
-        setParents(data || []);
-      } catch (err) {
-        console.error('Error al cargar padres:', err);
-      } finally {
-        setLoading(false);
+  // 1. Cargar familiares pertenecientes a esta cuenta
+  const loadParents = useCallback(async () => {
+    try {
+      setLoading(true);
+      let query = supabase.from('parents').select('*').order('name', { ascending: true });
+      if (linkedAccountId && linkedAccountId !== 'default') {
+        query = query.eq('account_id', linkedAccountId);
       }
+      const { data, error } = await query;
+
+      if (error) throw error;
+      setParents(data || []);
+    } catch (err) {
+      console.error('Error al cargar familiares:', err);
+    } finally {
+      setLoading(false);
     }
-    loadParents();
-  }, []);
+  }, [linkedAccountId]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadParents();
+    }
+  }, [isAuthenticated, loadParents]);
 
   // 2. Reloj en tiempo real (grande y legible)
   useEffect(() => {
@@ -640,7 +669,23 @@ export default function TabletDashboard() {
     );
   }
 
-  // PANTALLA 1: Selección de Perfil (Padre o Madre)
+const AVATAR_GRADIENTS = [
+  'linear-gradient(135deg, #ec4899 0%, #f43f5e 100%)', // Rosa
+  'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', // Azul
+  'linear-gradient(135deg, #10b981 0%, #059669 100%)', // Verde
+  'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)', // Violeta
+  'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)', // Ámbar
+  'linear-gradient(135deg, #06b6d4 0%, #0891b2 100%)', // Cian
+];
+
+function getAvatarGradient(name: string, index: number) {
+  const lower = name.toLowerCase();
+  if (lower.includes('mamá') || lower.includes('mama')) return AVATAR_GRADIENTS[0];
+  if (lower.includes('papá') || lower.includes('papa')) return AVATAR_GRADIENTS[1];
+  return AVATAR_GRADIENTS[index % AVATAR_GRADIENTS.length];
+}
+
+  // PANTALLA 1: Selección de Perfil Familiar
   if (!selectedParent) {
     return (
       <main style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
@@ -649,73 +694,92 @@ export default function TabletDashboard() {
           <div className="blob blob-2"></div>
         </div>
 
-        <h1 style={{ fontSize: '3rem', fontWeight: 800, marginBottom: '10px', textAlign: 'center' }}>Portal Médico Familiar</h1>
-        <p style={{ fontSize: '1.5rem', color: 'var(--color-text-secondary)', marginBottom: '50px', textAlign: 'center' }}>Selecciona tu perfil para ver tu información del día</p>
-
-        <div style={{ display: 'flex', gap: '40px', flexWrap: 'wrap', justifyContent: 'center', maxWidth: '900px', width: '100%' }}>
-          {parents.map((parent) => (
-            <button
-              key={parent.id}
-              onClick={() => setSelectedParent(parent)}
-              className="glass-panel"
-              style={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '24px',
-                width: '320px',
-                padding: '40px',
-                cursor: 'pointer',
-                borderRadius: 'var(--radius-xl)',
-                border: '2px solid var(--glass-border)',
-                outline: 'none',
-                textDecoration: 'none'
-              }}
-            >
-              <div style={{
-                width: '150px',
-                height: '150px',
-                borderRadius: '50%',
-                background: parent.name === 'Mamá' ? 'linear-gradient(135deg, #ec4899 0%, #f43f5e 100%)' : 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
-                color: 'white',
-                fontSize: '4.5rem',
-                fontWeight: 700
-              }}>
-                {parent.name.charAt(0)}
-              </div>
-              <span style={{ fontSize: '2.5rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>{parent.name}</span>
-            </button>
-          ))}
+        <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+          <span style={{ fontSize: '1.1rem', color: 'var(--color-info)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            {linkedAccountName ? `Cuenta: ${linkedAccountName}` : 'Portal Médico Familiar'}
+          </span>
+          <h1 style={{ fontSize: '2.8rem', fontWeight: 800, marginTop: '6px' }}>¿Quién eres?</h1>
+          <p style={{ fontSize: '1.3rem', color: 'var(--color-text-secondary)', marginTop: '8px' }}>
+            Selecciona tu perfil para ver tu medicación y citas de hoy
+          </p>
         </div>
 
-        <button
-          onClick={handleLockSession}
-          style={{
-            marginTop: '50px',
-            background: 'transparent',
-            border: 'none',
-            color: 'var(--color-text-muted)',
-            fontSize: '0.95rem',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '8px 16px',
-            borderRadius: 'var(--radius-sm)'
-          }}
-        >
-          <Lock size={16} />
-          <span>Bloquear dispositivo</span>
-        </button>
+        {parents.length === 0 ? (
+          <div className="glass-panel" style={{ padding: '36px', textAlign: 'center', maxWidth: '500px' }}>
+            <AlertTriangle size={40} color="var(--color-warning)" style={{ margin: '0 auto 16px' }} />
+            <h2 style={{ fontSize: '1.4rem', fontWeight: 700 }}>Sin familiares registrados</h2>
+            <p style={{ color: 'var(--color-text-secondary)', marginTop: '8px', fontSize: '1rem' }}>
+              No hay familiares dados de alta para esta cuenta. Accede al Panel de Administración (<strong>/admin</strong>) para añadir familiares.
+            </p>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: '32px', flexWrap: 'wrap', justifyContent: 'center', maxWidth: '1000px', width: '100%' }}>
+            {parents.map((parent, index) => (
+              <button
+                key={parent.id}
+                onClick={() => setSelectedParent(parent)}
+                className="glass-panel"
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '20px',
+                  width: '280px',
+                  padding: '36px 24px',
+                  cursor: 'pointer',
+                  borderRadius: 'var(--radius-xl)',
+                  border: '2px solid var(--glass-border)',
+                  outline: 'none',
+                  textDecoration: 'none',
+                  transition: 'transform 0.15s ease, border-color 0.15s ease'
+                }}
+              >
+                <div style={{
+                  width: '130px',
+                  height: '130px',
+                  borderRadius: '50%',
+                  background: getAvatarGradient(parent.name, index),
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
+                  color: 'white',
+                  fontSize: '3.8rem',
+                  fontWeight: 700
+                }}>
+                  {parent.name.charAt(0)}
+                </div>
+                <span style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>{parent.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: '24px', marginTop: '40px', alignItems: 'center' }}>
+          <button
+            onClick={handleUnlinkAccount}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--color-text-muted)',
+              fontSize: '0.9rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              borderRadius: 'var(--radius-sm)'
+            }}
+          >
+            <Lock size={15} />
+            <span>Desvincular / Cambiar de Familia</span>
+          </button>
+        </div>
       </main>
     );
   }
 
-  // PANTALLA 2: Dashboard de la Tablet (Mamá o Papá)
+  // PANTALLA 2: Dashboard de la Tablet (Mamá, Papá o Familiar)
   return (
     <main style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', padding: '24px', gap: '24px' }}>
       <div className="bg-blobs">

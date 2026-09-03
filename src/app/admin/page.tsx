@@ -18,7 +18,10 @@ import {
   Check,
   AlertTriangle,
   Pencil,
-  X
+  X,
+  Users,
+  Key,
+  UserPlus
 } from 'lucide-react';
 import { 
   ScheduleType, 
@@ -27,9 +30,18 @@ import {
   inferScheduleFromText 
 } from '@/lib/medication-schedule';
 
+interface Account {
+  id: string;
+  user_id: string;
+  name: string;
+  tablet_pin: string;
+}
+
 interface Parent {
   id: string;
+  account_id?: string;
   name: string;
+  avatar_url?: string;
 }
 
 interface Medication {
@@ -45,6 +57,7 @@ interface Medication {
 
 interface Notice {
   id: string;
+  account_id?: string;
   parent_id: string | null;
   message: string;
   type: 'info' | 'warning' | 'alert';
@@ -56,6 +69,7 @@ interface Notice {
 
 interface Appointment {
   id: string;
+  account_id?: string;
   parent_id: string;
   title: string;
   start_time: string;
@@ -191,16 +205,29 @@ function ScheduleSelector({
 }
 
 export default function AdminPortal() {
-  // Autenticación
+  // Autenticación & Cuenta
   const [session, setSession] = useState<any>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [registerFamilyName, setRegisterFamilyName] = useState('');
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
 
-  // Estados de datos
+  // Cuenta actual
+  const [currentAccount, setCurrentAccount] = useState<Account | null>(null);
+  const [isEditingFamilyName, setIsEditingFamilyName] = useState(false);
+  const [familyNameInput, setFamilyNameInput] = useState('');
+  const [isEditingPin, setIsEditingPin] = useState(false);
+  const [accountPinInput, setAccountPinInput] = useState('');
+
+  // Gestión de familiares (Padres / Abuelos)
   const [parents, setParents] = useState<Parent[]>([]);
   const [selectedParentId, setSelectedParentId] = useState<string>('');
+  const [isAddingParent, setIsAddingParent] = useState(false);
+  const [newParentName, setNewParentName] = useState('');
+  const [editingParentId, setEditingParentId] = useState<string | null>(null);
+  const [editingParentName, setEditingParentName] = useState('');
   
   // Medicamentos
   const [activeMeds, setActiveMeds] = useState<any[]>([]);
@@ -257,47 +284,129 @@ export default function AdminPortal() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // 2. Cargar datos si el usuario está autenticado
+  // 2. Cargar datos aislados de la cuenta autenticada
   const loadAdminData = useCallback(async () => {
+    if (!session?.user?.id) return;
+
     try {
-      // Cargar padres
-      const { data: parentsData } = await supabase.from('parents').select('*').order('name');
-      setParents(parentsData || []);
-      if (parentsData && parentsData.length > 0 && !selectedParentId) {
-        setSelectedParentId(parentsData[0].id);
+      // Cargar o crear la cuenta del usuario
+      let account = currentAccount;
+      if (!account) {
+        const { data: accData } = await supabase
+          .from('accounts')
+          .select('*')
+          .eq('user_id', session.user.id)
+          .maybeSingle();
+
+        if (accData) {
+          account = accData;
+        } else {
+          // Crear cuenta por defecto si no existe
+          const { data: newAcc, error: createAccErr } = await supabase
+            .from('accounts')
+            .insert([{ user_id: session.user.id, name: registerFamilyName.trim() || 'Mi Familia', tablet_pin: '1234' }])
+            .select()
+            .single();
+
+          if (!createAccErr && newAcc) {
+            account = newAcc;
+          }
+        }
+
+        if (account) {
+          setCurrentAccount(account);
+          setAccountPinInput(account.tablet_pin || '1234');
+          setFamilyNameInput(account.name || 'Mi Familia');
+        }
       }
 
-      // Cargar medicamentos activos
-      if (selectedParentId || (parentsData && parentsData.length > 0)) {
-        const pId = selectedParentId || parentsData?.[0]?.id;
+      const accountId = account?.id;
+      if (!accountId) return;
+
+      // Cargar familiares de esta cuenta
+      let { data: parentsData } = await supabase
+        .from('parents')
+        .select('*')
+        .eq('account_id', accountId)
+        .order('name');
+
+      // Si la cuenta no tiene familiares aún pero existen registros sin account_id, vincularlos
+      if (!parentsData || parentsData.length === 0) {
+        const { data: orphanParents } = await supabase
+          .from('parents')
+          .select('*')
+          .is('account_id', null);
+
+        if (orphanParents && orphanParents.length > 0) {
+          for (const p of orphanParents) {
+            await supabase.from('parents').update({ account_id: accountId }).eq('id', p.id);
+          }
+          const { data: updatedParents } = await supabase
+            .from('parents')
+            .select('*')
+            .eq('account_id', accountId)
+            .order('name');
+          parentsData = updatedParents;
+        } else {
+          // Si es cuenta nueva vacía, crear Mamá y Papá por defecto
+          const { data: newParents } = await supabase
+            .from('parents')
+            .insert([
+              { account_id: accountId, name: 'Mamá' },
+              { account_id: accountId, name: 'Papá' }
+            ])
+            .select();
+          parentsData = newParents;
+        }
+      }
+
+      setParents(parentsData || []);
+      const activeParentId = selectedParentId || parentsData?.[0]?.id || '';
+      if (!selectedParentId && activeParentId) {
+        setSelectedParentId(activeParentId);
+      }
+
+      // Cargar medicamentos activos del familiar seleccionado
+      if (activeParentId) {
         const { data: medsData } = await supabase
           .from('medications')
           .select('*')
-          .eq('parent_id', pId)
+          .eq('parent_id', activeParentId)
           .eq('active', true);
         setActiveMeds(medsData || []);
       }
 
-      // Cargar avisos (con el nombre del padre)
-      const { data: noticesData } = await supabase
-        .from('notices')
-        .select('*, parents(name)')
-        .order('created_at', { ascending: false });
+      // Cargar avisos asociados a esta cuenta o sus familiares
+      const parentIds = (parentsData || []).map(p => p.id);
+      let noticesQuery = supabase.from('notices').select('*, parents(name)').order('created_at', { ascending: false });
+      
+      if (parentIds.length > 0) {
+        noticesQuery = noticesQuery.or(`account_id.eq.${accountId},parent_id.in.(${parentIds.join(',')})`);
+      } else {
+        noticesQuery = noticesQuery.eq('account_id', accountId);
+      }
+
+      const { data: noticesData } = await noticesQuery;
       setNotices((noticesData as any) || []);
 
-      // Cargar citas próximas
-      const { data: appointmentsData } = await supabase
-        .from('appointments')
-        .select('*, parents(name)')
-        .gte('start_time', new Date().toISOString())
-        .order('start_time', { ascending: true })
-        .limit(10);
-      setAppointments((appointmentsData as any) || []);
+      // Cargar citas próximas de los familiares de esta cuenta
+      if (parentIds.length > 0) {
+        const { data: appointmentsData } = await supabase
+          .from('appointments')
+          .select('*, parents(name)')
+          .in('parent_id', parentIds)
+          .gte('start_time', new Date().toISOString())
+          .order('start_time', { ascending: true })
+          .limit(10);
+        setAppointments((appointmentsData as any) || []);
+      } else {
+        setAppointments([]);
+      }
 
     } catch (err) {
       console.error('Error al cargar datos de administración:', err);
     }
-  }, [selectedParentId]);
+  }, [session, currentAccount, selectedParentId, registerFamilyName]);
 
   useEffect(() => {
     if (session) {
@@ -319,16 +428,38 @@ export default function AdminPortal() {
     }
   }, [selectedParentId, session]);
 
-  // 3. Acciones de Auth
-  const handleLogin = async (e: React.FormEvent) => {
+  // 3. Acciones de Auth & Registro
+  const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthError('');
     setAuthLoading(true);
+
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
+      if (isRegistering) {
+        const { data, error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        if (data?.user) {
+          const famName = registerFamilyName.trim() || 'Mi Familia';
+          const { data: accData } = await supabase
+            .from('accounts')
+            .insert([{ user_id: data.user.id, name: famName, tablet_pin: '1234' }])
+            .select()
+            .single();
+
+          if (accData) {
+            await supabase.from('parents').insert([
+              { account_id: accData.id, name: 'Mamá' },
+              { account_id: accData.id, name: 'Papá' },
+            ]);
+          }
+          alert('¡Cuenta creada correctamente! Iniciando sesión...');
+        }
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+      }
     } catch (err: any) {
-      setAuthError(err.message || 'Error de inicio de sesión');
+      setAuthError(err.message || 'Error en la autenticación');
     } finally {
       setAuthLoading(false);
     }
@@ -337,9 +468,112 @@ export default function AdminPortal() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     setSession(null);
+    setCurrentAccount(null);
   };
 
-  // 4. Sincronizar Google Calendar
+  // 4. Gestión de Familiares (Padres / Abuelos)
+  const handleAddParent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newParentName.trim() || !currentAccount) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('parents')
+        .insert([{ account_id: currentAccount.id, name: newParentName.trim() }])
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      setParents(prev => [...prev, data]);
+      setNewParentName('');
+      setIsAddingParent(false);
+      if (!selectedParentId) setSelectedParentId(data.id);
+      alert(`¡Familiar "${data.name}" añadido correctamente a tu cuenta!`);
+    } catch (err: any) {
+      alert(`Error al añadir familiar: ${err.message || err}`);
+    }
+  };
+
+  const handleUpdateParentName = async (parentId: string) => {
+    if (!editingParentName.trim()) return;
+
+    try {
+      const { error } = await supabase
+        .from('parents')
+        .update({ name: editingParentName.trim() })
+        .eq('id', parentId);
+
+      if (error) throw error;
+
+      setParents(prev => prev.map(p => p.id === parentId ? { ...p, name: editingParentName.trim() } : p));
+      setEditingParentId(null);
+    } catch (err: any) {
+      alert(`Error al actualizar nombre: ${err.message || err}`);
+    }
+  };
+
+  const handleDeleteParent = async (parentId: string, parentName: string) => {
+    if (!confirm(`¿Seguro que deseas eliminar el perfil de ${parentName}? Se eliminarán también todos sus medicamentos y citas asociadas.`)) return;
+
+    try {
+      const { error } = await supabase
+        .from('parents')
+        .delete()
+        .eq('id', parentId);
+
+      if (error) throw error;
+
+      const filtered = parents.filter(p => p.id !== parentId);
+      setParents(filtered);
+      if (selectedParentId === parentId) {
+        setSelectedParentId(filtered[0]?.id || '');
+      }
+    } catch (err: any) {
+      alert(`Error al eliminar familiar: ${err.message || err}`);
+    }
+  };
+
+  // 5. Configuración de Cuenta y PIN
+  const handleSavePin = async () => {
+    if (!accountPinInput.trim() || !currentAccount) return;
+
+    try {
+      const { error } = await supabase
+        .from('accounts')
+        .update({ tablet_pin: accountPinInput.trim() })
+        .eq('id', currentAccount.id);
+
+      if (error) throw error;
+
+      setCurrentAccount(prev => prev ? { ...prev, tablet_pin: accountPinInput.trim() } : null);
+      setIsEditingPin(false);
+      alert('¡PIN de la Tablet actualizado correctamente!');
+    } catch (err: any) {
+      alert(`Error al guardar PIN: ${err.message || err}`);
+    }
+  };
+
+  const handleSaveFamilyName = async () => {
+    if (!familyNameInput.trim() || !currentAccount) return;
+
+    try {
+      const { error } = await supabase
+        .from('accounts')
+        .update({ name: familyNameInput.trim() })
+        .eq('id', currentAccount.id);
+
+      if (error) throw error;
+
+      setCurrentAccount(prev => prev ? { ...prev, name: familyNameInput.trim() } : null);
+      setIsEditingFamilyName(false);
+      alert('¡Nombre de la familia actualizado correctamente!');
+    } catch (err: any) {
+      alert(`Error al guardar nombre: ${err.message || err}`);
+    }
+  };
+
+  // 6. Sincronizar Google Calendar
   const handleCalendarSync = async () => {
     setIsSyncing(true);
     setSyncStatus('Sincronizando...');
@@ -362,7 +596,7 @@ export default function AdminPortal() {
     }
   };
 
-  // 5. Cargar y Procesar PDF de recetas
+  // 7. Cargar y Procesar PDF de recetas
   const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -550,7 +784,7 @@ export default function AdminPortal() {
   const saveManualMed = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!manualMedForm.name.trim() || !selectedParentId) {
-      alert('Por favor indica al menos el nombre del medicamento y selecciona el perfil (Mamá o Papá).');
+      alert('Por favor indica al menos el nombre del medicamento y selecciona el perfil del familiar.');
       return;
     }
 
@@ -589,10 +823,10 @@ export default function AdminPortal() {
     }
   };
 
-  // 6. Enviar Aviso
+  // 8. Enviar Aviso
   const sendNotice = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newNoticeText.trim()) return;
+    if (!newNoticeText.trim() || !currentAccount) return;
 
     try {
       const parentId = noticeParentId === 'both' ? null : noticeParentId;
@@ -600,6 +834,7 @@ export default function AdminPortal() {
       const { error } = await supabase
         .from('notices')
         .insert({
+          account_id: currentAccount.id,
           parent_id: parentId,
           message: newNoticeText,
           type: noticeType,
@@ -609,7 +844,7 @@ export default function AdminPortal() {
       if (error) throw error;
 
       setNewNoticeText('');
-      alert('Aviso enviado correctamente en tiempo real.');
+      alert('Aviso enviado correctamente en tiempo real a tu tablet familiar.');
       loadAdminData();
     } catch (err: any) {
       alert(`Error al enviar el aviso: ${err.message || err}`);
@@ -628,7 +863,7 @@ export default function AdminPortal() {
   };
 
 
-  // --- VISTA DE LOGIN ---
+  // --- VISTA DE LOGIN Y REGISTRO ---
   if (!session) {
     return (
       <main style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
@@ -637,10 +872,52 @@ export default function AdminPortal() {
           <div className="blob blob-2"></div>
         </div>
 
-        <form onSubmit={handleLogin} className="glass-panel" style={{ width: '100%', maxWidth: '420px', display: 'flex', flexDirection: 'column', gap: '24px', padding: '40px' }}>
+        <div className="glass-panel" style={{ width: '100%', maxWidth: '440px', display: 'flex', flexDirection: 'column', gap: '24px', padding: '36px' }}>
           <div style={{ textAlign: 'center' }}>
-            <h1 style={{ fontSize: '2.2rem', fontWeight: 800, marginBottom: '8px' }}>Panel de Control</h1>
-            <p style={{ color: 'var(--color-text-secondary)' }}>Introduce tus credenciales de Supabase para administrar la tablet</p>
+            <h1 style={{ fontSize: '2.2rem', fontWeight: 800, marginBottom: '8px' }}>Portal de Control</h1>
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.95rem' }}>
+              {isRegistering ? 'Crea una nueva cuenta para gestionar tu familia' : 'Inicia sesión para administrar la tablet de tu familia'}
+            </p>
+          </div>
+
+          {/* Toggle Iniciar Sesión / Registro */}
+          <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', padding: '4px', borderRadius: 'var(--radius-md)', border: '1px solid var(--glass-border)' }}>
+            <button
+              type="button"
+              onClick={() => { setIsRegistering(false); setAuthError(''); }}
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                borderRadius: 'var(--radius-sm)',
+                border: 'none',
+                background: !isRegistering ? 'var(--color-primary)' : 'transparent',
+                color: !isRegistering ? '#ffffff' : 'var(--color-text-muted)',
+                fontWeight: 700,
+                fontSize: '0.9rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              Iniciar Sesión
+            </button>
+            <button
+              type="button"
+              onClick={() => { setIsRegistering(true); setAuthError(''); }}
+              style={{
+                flex: 1,
+                padding: '8px 12px',
+                borderRadius: 'var(--radius-sm)',
+                border: 'none',
+                background: isRegistering ? 'var(--color-primary)' : 'transparent',
+                color: isRegistering ? '#ffffff' : 'var(--color-text-muted)',
+                fontWeight: 700,
+                fontSize: '0.9rem',
+                cursor: 'pointer',
+                transition: 'all 0.2s ease'
+              }}
+            >
+              Crear Cuenta
+            </button>
           </div>
 
           {authError && (
@@ -650,7 +927,24 @@ export default function AdminPortal() {
             </div>
           )}
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <form onSubmit={handleAuth} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+            {isRegistering && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <label style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Nombre de tu Familia</label>
+                <div style={{ position: 'relative' }}>
+                  <Users size={18} style={{ position: 'absolute', left: '14px', top: '50%', transform: 'translateY(-50%)', color: 'var(--color-text-muted)' }} />
+                  <input 
+                    type="text" 
+                    value={registerFamilyName}
+                    onChange={(e) => setRegisterFamilyName(e.target.value)}
+                    placeholder="ej. Familia Martínez" 
+                    required={isRegistering}
+                    style={{ width: '100%', padding: '14px 14px 14px 44px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-md)', color: '#ffffff', outline: 'none', fontSize: '1rem' }}
+                  />
+                </div>
+              </div>
+            )}
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               <label style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>Correo Electrónico</label>
               <div style={{ position: 'relative' }}>
@@ -680,47 +974,216 @@ export default function AdminPortal() {
                 />
               </div>
             </div>
-          </div>
 
-          <button 
-            type="submit" 
-            disabled={authLoading}
-            className="btn btn-primary" 
-            style={{ width: '100%', padding: '14px', fontSize: '1.05rem', fontWeight: 700 }}
-          >
-            {authLoading ? 'Iniciando sesión...' : 'Iniciar Sesión'}
-          </button>
-        </form>
+            <button 
+              type="submit" 
+              disabled={authLoading}
+              className="btn btn-primary" 
+              style={{ width: '100%', padding: '14px', fontSize: '1.05rem', fontWeight: 700, marginTop: '8px' }}
+            >
+              {authLoading ? (isRegistering ? 'Creando cuenta...' : 'Iniciando sesión...') : (isRegistering ? 'Crear Cuenta Familiar' : 'Iniciar Sesión')}
+            </button>
+          </form>
 
-        <p style={{ marginTop: '20px', color: 'var(--color-text-muted)', fontSize: '0.9rem', textAlign: 'center', maxWidth: '380px' }}>
-          💡 Nota: Si aún no has creado un usuario administrador, ve a tu panel de Supabase Auth en la web y añade un usuario con correo y contraseña.
-        </p>
+          <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', textAlign: 'center' }}>
+            🔒 Cada cuenta dispone de su propio entorno aislado con sus familiares, recetas y avisos.
+          </p>
+        </div>
       </main>
     );
   }
 
   // --- VISTA PANEL ADMINISTRACIÓN ---
   return (
-    <main style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', padding: '24px', gap: '24px' }}>
+    <main style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', padding: '24px', gap: '20px' }}>
       <div className="bg-blobs">
         <div className="blob blob-1"></div>
         <div className="blob blob-2"></div>
       </div>
 
       {/* Cabecera Admin */}
-      <header className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px' }}>
+      <header className="glass-panel" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', flexWrap: 'wrap', gap: '16px' }}>
         <div>
-          <span style={{ fontSize: '0.95rem', color: 'var(--color-info)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Panel de Control</span>
-          <h1 style={{ fontSize: '2rem', fontWeight: 800 }}>Gestión Médica de tus Padres</h1>
+          <span style={{ fontSize: '0.85rem', color: 'var(--color-info)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Panel de Control Familiar</span>
+          <h1 style={{ fontSize: '1.9rem', fontWeight: 800 }}>Gestión Médica de tu Familia</h1>
         </div>
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          <span style={{ fontSize: '0.95rem', color: 'var(--color-text-secondary)' }}>Sesión: {session.user.email}</span>
-          <button onClick={handleLogout} className="btn btn-secondary" style={{ padding: '10px 16px', fontSize: '0.95rem' }}>
+          <span style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)' }}>{session.user.email}</span>
+          <button onClick={handleLogout} className="btn btn-secondary" style={{ padding: '8px 14px', fontSize: '0.9rem' }}>
             <LogOut size={16} />
             <span>Salir</span>
           </button>
         </div>
       </header>
+
+      {/* TARJETA DE GESTIÓN DE CUENTA Y FAMILIARES */}
+      <section className="glass-panel" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: '16px', borderLeft: '4px solid var(--color-primary)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+          
+          {/* Nombre de la Familia */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: 'rgba(59, 130, 246, 0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#60a5fa' }}>
+              <Users size={22} />
+            </div>
+            <div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>Cuenta Familiar</span>
+              {isEditingFamilyName ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                  <input 
+                    type="text" 
+                    value={familyNameInput}
+                    onChange={(e) => setFamilyNameInput(e.target.value)}
+                    style={{ padding: '4px 8px', fontSize: '1rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '4px', color: '#ffffff' }}
+                  />
+                  <button onClick={handleSaveFamilyName} className="btn btn-success" style={{ padding: '4px 8px', fontSize: '0.8rem' }}><Check size={14} /></button>
+                  <button onClick={() => setIsEditingFamilyName(false)} className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8rem' }}><X size={14} /></button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <strong style={{ fontSize: '1.25rem', color: 'var(--color-text-primary)' }}>{currentAccount?.name || 'Mi Familia'}</strong>
+                  <button onClick={() => setIsEditingFamilyName(true)} style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer' }} title="Cambiar nombre de la familia">
+                    <Pencil size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* PIN de la Tablet */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.02)', padding: '8px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--glass-border)' }}>
+            <Key size={18} color="var(--color-warning)" />
+            <div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', display: 'block' }}>PIN Tablet</span>
+              {isEditingPin ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+                  <input 
+                    type="text" 
+                    value={accountPinInput}
+                    onChange={(e) => setAccountPinInput(e.target.value)}
+                    maxLength={8}
+                    style={{ width: '80px', padding: '4px 8px', fontSize: '0.95rem', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '4px', color: '#ffffff', textAlign: 'center' }}
+                  />
+                  <button onClick={handleSavePin} className="btn btn-success" style={{ padding: '4px 8px', fontSize: '0.8rem' }}><Check size={14} /></button>
+                  <button onClick={() => setIsEditingPin(false)} className="btn btn-secondary" style={{ padding: '4px 8px', fontSize: '0.8rem' }}><X size={14} /></button>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <strong style={{ fontSize: '1.1rem', color: 'var(--color-warning)', letterSpacing: '2px' }}>{currentAccount?.tablet_pin || '1234'}</strong>
+                  <button onClick={() => setIsEditingPin(true)} style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer' }} title="Cambiar PIN de la tablet">
+                    <Pencil size={13} />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+        </div>
+
+        {/* Listado y Creación de Perfiles de Familiares */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', borderTop: '1px solid var(--glass-border)', paddingTop: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
+            <span style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)', fontWeight: 600 }}>Familiares registrados en esta cuenta:</span>
+            {!isAddingParent && (
+              <button 
+                onClick={() => setIsAddingParent(true)} 
+                className="btn btn-secondary" 
+                style={{ padding: '4px 10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+              >
+                <UserPlus size={14} />
+                <span>+ Añadir Familiar</span>
+              </button>
+            )}
+          </div>
+
+          {/* Formulario para añadir familiar */}
+          {isAddingParent && (
+            <form onSubmit={handleAddParent} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.03)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--glass-border)' }}>
+              <input 
+                type="text" 
+                required
+                value={newParentName}
+                onChange={(e) => setNewParentName(e.target.value)}
+                placeholder="Nombre del familiar (ej. Mamá, Papá, Abuela Carmen)"
+                style={{ flex: 1, padding: '6px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '4px', color: '#ffffff', outline: 'none', fontSize: '0.9rem' }}
+                autoFocus
+              />
+              <button type="submit" className="btn btn-success" style={{ padding: '6px 12px', fontSize: '0.85rem' }}>
+                <Check size={14} />
+                <span>Guardar</span>
+              </button>
+              <button type="button" onClick={() => setIsAddingParent(false)} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.85rem' }}>
+                Cancelar
+              </button>
+            </form>
+          )}
+
+          {/* Chips de familiares */}
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {parents.length === 0 ? (
+              <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>No hay familiares registrados. Pulsa "+ Añadir Familiar" para comenzar.</p>
+            ) : (
+              parents.map((p) => {
+                const isSelected = selectedParentId === p.id;
+                const isEditingThis = editingParentId === p.id;
+
+                if (isEditingThis) {
+                  return (
+                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(255,255,255,0.05)', padding: '4px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-info)' }}>
+                      <input 
+                        type="text"
+                        value={editingParentName}
+                        onChange={(e) => setEditingParentName(e.target.value)}
+                        style={{ padding: '2px 6px', fontSize: '0.85rem', background: '#0f172a', border: '1px solid var(--glass-border)', borderRadius: '4px', color: '#ffffff' }}
+                        autoFocus
+                      />
+                      <button onClick={() => handleUpdateParentName(p.id)} style={{ background: 'transparent', border: 'none', color: 'var(--color-success)', cursor: 'pointer' }}><Check size={14} /></button>
+                      <button onClick={() => setEditingParentId(null)} style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer' }}><X size={14} /></button>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div
+                    key={p.id}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                      padding: '6px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      background: isSelected ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.03)',
+                      border: isSelected ? '1px solid #3b82f6' : '1px solid var(--glass-border)',
+                      cursor: 'pointer',
+                      transition: 'all 0.15s ease'
+                    }}
+                    onClick={() => setSelectedParentId(p.id)}
+                  >
+                    <span style={{ fontWeight: isSelected ? 700 : 500, color: isSelected ? '#60a5fa' : 'var(--color-text-primary)', fontSize: '0.95rem' }}>
+                      {p.name}
+                    </span>
+                    <button 
+                      onClick={(e) => { e.stopPropagation(); setEditingParentId(p.id); setEditingParentName(p.name); }}
+                      style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', padding: '2px' }}
+                      title="Renombrar familiar"
+                    >
+                      <Pencil size={12} />
+                    </button>
+                    {parents.length > 1 && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleDeleteParent(p.id, p.name); }}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--color-error)', cursor: 'pointer', padding: '2px' }}
+                        title="Eliminar familiar"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </section>
 
       {/* Grid de Secciones */}
       <div style={{ 
@@ -764,7 +1227,7 @@ export default function AdminPortal() {
             <h3 style={{ fontSize: '1.05rem', color: 'var(--color-text-secondary)' }}>Citas sincronizadas próximas:</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '200px', overflowY: 'auto' }}>
               {appointments.length === 0 ? (
-                <p style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem', fontStyle: 'italic' }}>No hay citas sincronizadas próximamente.</p>
+                <p style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem', fontStyle: 'italic' }}>No hay citas sincronizadas próximamente para tus familiares.</p>
               ) : (
                 appointments.map(appt => {
                   const date = new Date(appt.start_time);

@@ -1,21 +1,28 @@
--- Esquema de Base de Datos para Gestión Médica de Padres
+-- Esquema de Base de Datos para Gestión Médica de Padres (Multi-Cuenta / Multi-Familia)
 
 -- Habilitar la extensión para UUIDs si no está habilitada
 create extension if not exists "uuid-ossp";
 
--- 1. Tabla de Padres (perfiles)
-create table public.parents (
+-- 1. Tabla de Cuentas / Familias (Tenants)
+create table if not exists public.accounts (
     id uuid default gen_random_uuid() primary key,
-    name text not null,
+    user_id uuid references auth.users(id) on delete cascade unique,
+    name text not null, -- ej. 'Familia Martínez'
+    tablet_pin text default '1234' not null,
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 2. Tabla de Padres / Familiares
+create table if not exists public.parents (
+    id uuid default gen_random_uuid() primary key,
+    account_id uuid references public.accounts(id) on delete cascade,
+    name text not null, -- ej. 'Mamá', 'Papá', 'Abuela Carmen'
     avatar_url text,
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- Insertar datos iniciales para Papá y Mamá
-insert into public.parents (name) values ('Mamá'), ('Papá');
-
--- 2. Tabla de Medicamentos
-create table public.medications (
+-- 3. Tabla de Medicamentos
+create table if not exists public.medications (
     id uuid default gen_random_uuid() primary key,
     parent_id uuid references public.parents(id) on delete cascade not null,
     name text not null,
@@ -39,32 +46,34 @@ begin
 end;
 $$ language plpgsql;
 
-create trigger update_medications_updated_at
+create or replace trigger update_medications_updated_at
 before update on public.medications
 for each row execute function update_updated_at_column();
 
--- 3. Tabla de Citas Médicas (Sincronizadas con Google Calendar)
-create table public.appointments (
+-- 4. Tabla de Citas Médicas (Sincronizadas con Google Calendar)
+create table if not exists public.appointments (
     id uuid default gen_random_uuid() primary key,
+    account_id uuid references public.accounts(id) on delete cascade,
     parent_id uuid references public.parents(id) on delete cascade not null,
     title text not null,
     description text,
     start_time timestamp with time zone not null,
     end_time timestamp with time zone not null,
     location text,
-    google_event_id text unique,
+    google_event_id text,
     created_at timestamp with time zone default timezone('utc'::text, now()) not null,
     updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
-create trigger update_appointments_updated_at
+create or replace trigger update_appointments_updated_at
 before update on public.appointments
 for each row execute function update_updated_at_column();
 
--- 4. Tabla de Avisos / Alertas enviadas
-create table public.notices (
+-- 5. Tabla de Avisos / Alertas enviadas
+create table if not exists public.notices (
     id uuid default gen_random_uuid() primary key,
-    parent_id uuid references public.parents(id) on delete cascade, -- null significa "Ambos"
+    account_id uuid references public.accounts(id) on delete cascade,
+    parent_id uuid references public.parents(id) on delete cascade, -- null significa "Todos los familiares de esta cuenta"
     message text not null,
     type text default 'info'::text check (type in ('info', 'warning', 'alert')) not null,
     is_read boolean default false not null,
@@ -72,37 +81,48 @@ create table public.notices (
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- 5. Configurar Row Level Security (RLS)
+-- 6. Configurar Row Level Security (RLS)
+alter table public.accounts enable row level security;
 alter table public.parents enable row level security;
 alter table public.medications enable row level security;
 alter table public.appointments enable row level security;
 alter table public.notices enable row level security;
 
--- Crear políticas básicas para permitir lectura de padres
-create policy "Permitir lectura de padres a cualquiera" on public.parents
-    for select using (true);
-
-create policy "Permitir gestión de parents a usuarios autenticados" on public.parents
-    for all to authenticated using (true);
-
--- Políticas para 'medications' que permiten lectura y escritura completa
-create policy "Permitir gestión completa de medicación a cualquiera" on public.medications
+-- Políticas de acceso
+create policy "Permitir gestión de accounts a cualquiera o authenticated" on public.accounts
     for all using (true);
 
--- Políticas para 'appointments' que permiten lectura y escritura completa
-create policy "Permitir gestión completa de citas a cualquiera" on public.appointments
+create policy "Permitir lectura y gestión de parents" on public.parents
     for all using (true);
 
--- Políticas para 'notices' que permiten lectura y escritura completa
-create policy "Permitir gestión completa de avisos a cualquiera" on public.notices
+create policy "Permitir gestión completa de medicación" on public.medications
     for all using (true);
 
--- 6. Habilitar Supabase Realtime para que los avisos, citas y medicación lleguen en tiempo real
+create policy "Permitir gestión completa de citas" on public.appointments
+    for all using (true);
+
+create policy "Permitir gestión completa de avisos" on public.notices
+    for all using (true);
+
+-- 7. Habilitar Supabase Realtime para sincronización en tiempo real
 alter publication supabase_realtime add table public.notices;
 alter publication supabase_realtime add table public.medications;
 alter publication supabase_realtime add table public.appointments;
 
--- 7. Migración para añadir soporte de periodicidades avanzadas a tablas existentes
+-- 8. Migración para actualizar bases de datos existentes
+-- Ejecuta este bloque en Supabase SQL Editor si ya tienes tablas creadas:
+/*
+create table if not exists public.accounts (
+    id uuid default gen_random_uuid() primary key,
+    user_id uuid references auth.users(id) on delete cascade unique,
+    name text not null default 'Mi Familia',
+    tablet_pin text default '1234' not null,
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.parents add column if not exists account_id uuid references public.accounts(id) on delete cascade;
+alter table public.appointments add column if not exists account_id uuid references public.accounts(id) on delete cascade;
+alter table public.notices add column if not exists account_id uuid references public.accounts(id) on delete cascade;
 alter table public.medications add column if not exists schedule_type text default 'diario' not null;
 alter table public.medications add column if not exists schedule_days text default '' not null;
-
+*/
