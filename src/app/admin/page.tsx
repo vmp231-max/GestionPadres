@@ -326,30 +326,18 @@ export default function AdminPortal() {
       const accountId = account?.id;
       if (!accountId) return;
 
-      // Cargar familiares de esta cuenta exclusivamente
-      let { data: parentsData } = await supabase
+      // Cargar familiares de esta cuenta exclusivamente (100% gestión manual)
+      const { data: parentsData } = await supabase
         .from('parents')
         .select('*')
         .eq('account_id', accountId)
         .order('name');
 
-      // Si la cuenta no tiene familiares aún, crear Mamá y Papá por defecto para esta cuenta
-      if (!parentsData || parentsData.length === 0) {
-        const { data: newParents } = await supabase
-          .from('parents')
-          .insert([
-            { account_id: accountId, name: 'Mamá' },
-            { account_id: accountId, name: 'Papá' }
-          ])
-          .select();
-        parentsData = newParents;
-      }
-
       setParents(parentsData || []);
-      const activeParentId = selectedParentId || parentsData?.[0]?.id || '';
-      if (!selectedParentId && activeParentId) {
-        setSelectedParentId(activeParentId);
-      }
+      const activeParentId = (parentsData && parentsData.some(p => p.id === selectedParentId))
+        ? selectedParentId
+        : (parentsData?.[0]?.id || '');
+      setSelectedParentId(activeParentId);
 
       // Cargar medicamentos activos del familiar seleccionado
       if (activeParentId) {
@@ -429,19 +417,10 @@ export default function AdminPortal() {
         if (error) throw error;
         if (data?.user) {
           const famName = registerFamilyName.trim() || 'Mi Familia';
-          const { data: accData } = await supabase
+          await supabase
             .from('accounts')
-            .insert([{ user_id: data.user.id, name: famName, tablet_pin: '1234' }])
-            .select()
-            .single();
-
-          if (accData) {
-            await supabase.from('parents').insert([
-              { account_id: accData.id, name: 'Mamá' },
-              { account_id: accData.id, name: 'Papá' },
-            ]);
-          }
-          alert('¡Cuenta creada correctamente! Iniciando sesión...');
+            .insert([{ user_id: data.user.id, name: famName, tablet_pin: '1234' }]);
+          alert('¡Cuenta creada correctamente! Ahora puedes añadir manualmente a los miembros de tu familia.');
         }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -537,6 +516,10 @@ export default function AdminPortal() {
       if (selectedParentId === parentId) {
         setSelectedParentId(filtered[0]?.id || '');
       }
+      if (filtered.length === 0) {
+        setActiveMeds([]);
+      }
+      alert(`Familiar "${parentName}" eliminado correctamente.`);
     } catch (err: any) {
       alert(`Error al eliminar familiar: ${err.message || err}`);
     }
@@ -1215,15 +1198,13 @@ export default function AdminPortal() {
                         >
                           <Pencil size={13} />
                         </button>
-                        {parents.length > 1 && (
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); handleDeleteParent(p.id, p.name); }}
-                            style={{ background: 'transparent', border: 'none', color: 'var(--color-error)', cursor: 'pointer', padding: '2px' }}
-                            title="Eliminar familiar"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        )}
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleDeleteParent(p.id, p.name); }}
+                          style={{ background: 'transparent', border: 'none', color: 'var(--color-error)', cursor: 'pointer', padding: '2px' }}
+                          title="Eliminar familiar"
+                        >
+                          <Trash2 size={13} />
+                        </button>
                       </div>
                     </div>
 
