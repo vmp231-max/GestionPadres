@@ -20,6 +20,12 @@ import {
   Pencil,
   X
 } from 'lucide-react';
+import { 
+  ScheduleType, 
+  DAYS_OF_WEEK, 
+  getScheduleDescription, 
+  inferScheduleFromText 
+} from '@/lib/medication-schedule';
 
 interface Parent {
   id: string;
@@ -32,6 +38,8 @@ interface Medication {
   dose: string;
   frequency: string;
   period?: string;
+  schedule_type?: ScheduleType | string;
+  schedule_days?: string;
   comments?: string;
 }
 
@@ -52,6 +60,134 @@ interface Appointment {
   title: string;
   start_time: string;
   parents?: { name: string };
+}
+
+function ScheduleSelector({
+  scheduleType,
+  scheduleDays,
+  onChangeType,
+  onChangeDays,
+}: {
+  scheduleType: ScheduleType;
+  scheduleDays: string;
+  onChangeType: (type: ScheduleType) => void;
+  onChangeDays: (days: string) => void;
+}) {
+  const currentDays = scheduleDays ? scheduleDays.split(',').map(s => s.trim().toUpperCase()) : [];
+
+  const toggleDay = (key: string) => {
+    if (scheduleType === 'semanal') {
+      onChangeDays(key);
+      return;
+    }
+    const newDays = currentDays.includes(key)
+      ? currentDays.filter(k => k !== key)
+      : [...currentDays, key];
+    onChangeDays(newDays.join(','));
+  };
+
+  const setPreset = (presetDays: string[]) => {
+    onChangeDays(presetDays.join(','));
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '10px 12px', background: 'rgba(255, 255, 255, 0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--glass-border)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px', alignItems: 'center' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+          <label style={{ fontSize: '0.75rem', color: 'var(--color-info)', fontWeight: 600 }}>Periodicidad / Pauta</label>
+          <select
+            value={scheduleType}
+            onChange={(e) => {
+              const newType = e.target.value as ScheduleType;
+              onChangeType(newType);
+              if (newType === 'semanal' && !scheduleDays) onChangeDays('L');
+              if (newType === 'mensual' && !scheduleDays) onChangeDays('1');
+            }}
+            style={{ padding: '6px 10px', background: '#0f172a', border: '1px solid var(--color-info)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+          >
+            <option value="diario">📅 Todos los días (Diario)</option>
+            <option value="dias_semana">📆 Días específicos de la semana</option>
+            <option value="dias_alternos">🔄 Días alternos (Cada 2 días)</option>
+            <option value="semanal">🗓️ Semanal (1 día a la semana)</option>
+            <option value="mensual">📆 Mensual (Día del mes)</option>
+            <option value="segun_necesidad">🆘 Si precisa / Según necesidad (SOS)</option>
+          </select>
+        </div>
+
+        {scheduleType === 'mensual' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Día del mes (1 al 31)</label>
+            <input
+              type="number"
+              min="1"
+              max="31"
+              value={scheduleDays || '1'}
+              onChange={(e) => onChangeDays(e.target.value)}
+              style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+            />
+          </div>
+        )}
+
+        {scheduleType === 'dias_alternos' && (
+          <p style={{ fontSize: '0.8rem', color: 'var(--color-text-secondary)', margin: 0 }}>
+            🔄 Se mostrará un día sí, un día no (cada 48h).
+          </p>
+        )}
+
+        {scheduleType === 'segun_necesidad' && (
+          <p style={{ fontSize: '0.8rem', color: 'var(--color-warning)', margin: 0 }}>
+            🆘 Se mostrará en la sección "Si precisa" para tomar a demanda.
+          </p>
+        )}
+      </div>
+
+      {(scheduleType === 'dias_semana' || scheduleType === 'semanal') && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '2px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+              {scheduleType === 'semanal' ? 'Selecciona el día de la semana:' : 'Selecciona los días:'}
+            </span>
+            {scheduleType === 'dias_semana' && (
+              <div style={{ display: 'flex', gap: '4px' }}>
+                <button type="button" onClick={() => setPreset(['L', 'X', 'V'])} style={{ fontSize: '0.7rem', padding: '1px 6px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '4px', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>L-X-V</button>
+                <button type="button" onClick={() => setPreset(['M', 'J'])} style={{ fontSize: '0.7rem', padding: '1px 6px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '4px', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>M-J</button>
+                <button type="button" onClick={() => setPreset(['S', 'D'])} style={{ fontSize: '0.7rem', padding: '1px 6px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '4px', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>Fin de semana</button>
+                <button type="button" onClick={() => setPreset(['L', 'M', 'X', 'J', 'V', 'S', 'D'])} style={{ fontSize: '0.7rem', padding: '1px 6px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', borderRadius: '4px', color: 'var(--color-text-secondary)', cursor: 'pointer' }}>Todos</button>
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            {DAYS_OF_WEEK.map((d) => {
+              const isSelected = scheduleType === 'semanal' 
+                ? (scheduleDays || 'L').toUpperCase() === d.key 
+                : currentDays.includes(d.key);
+              return (
+                <button
+                  key={d.key}
+                  type="button"
+                  onClick={() => toggleDay(d.key)}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    background: isSelected ? 'var(--color-info)' : 'rgba(255,255,255,0.05)',
+                    color: isSelected ? '#ffffff' : 'var(--color-text-secondary)',
+                    border: isSelected ? '1px solid var(--color-info)' : '1px solid var(--glass-border)'
+                  }}
+                  title={d.label}
+                >
+                  {d.key} ({d.short})
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function AdminPortal() {
@@ -79,8 +215,10 @@ export default function AdminPortal() {
     dose: string;
     frequency: string;
     period: string;
+    schedule_type: ScheduleType;
+    schedule_days: string;
     comments: string;
-  }>({ name: '', dose: '', frequency: '', period: 'Mañana', comments: '' });
+  }>({ name: '', dose: '', frequency: '', period: 'Mañana', schedule_type: 'diario', schedule_days: '', comments: '' });
 
   const [isAddingManualMed, setIsAddingManualMed] = useState<boolean>(false);
   const [manualMedForm, setManualMedForm] = useState<{
@@ -88,8 +226,10 @@ export default function AdminPortal() {
     dose: string;
     frequency: string;
     period: string;
+    schedule_type: ScheduleType;
+    schedule_days: string;
     comments: string;
-  }>({ name: '', dose: '', frequency: '', period: 'Mañana', comments: '' });
+  }>({ name: '', dose: '', frequency: '', period: 'Mañana', schedule_type: 'diario', schedule_days: '', comments: '' });
 
   const [isSavingMed, setIsSavingMed] = useState<boolean>(false);
 
@@ -264,7 +404,15 @@ export default function AdminPortal() {
   };
 
   const addEmptyParsedMed = () => {
-    setParsedMeds([...parsedMeds, { name: '', dose: '', frequency: '', period: 'Mañana', comments: '' }]);
+    setParsedMeds([...parsedMeds, { 
+      name: '', 
+      dose: '', 
+      frequency: '', 
+      period: 'Mañana', 
+      schedule_type: 'diario', 
+      schedule_days: '', 
+      comments: '' 
+    }]);
   };
 
   const removeParsedMed = (index: number) => {
@@ -285,15 +433,20 @@ export default function AdminPortal() {
       if (deactivateError) throw deactivateError;
 
       // 2. Insertar los nuevos medicamentos activos
-      const medsToInsert = parsedMeds.map(med => ({
-        parent_id: selectedParentId,
-        name: med.name,
-        dose: med.dose,
-        frequency: med.frequency,
-        period: med.period || 'Mañana',
-        comments: med.comments || '',
-        active: true
-      }));
+      const medsToInsert = parsedMeds.map(med => {
+        const inferred = inferScheduleFromText(med.frequency, med.comments);
+        return {
+          parent_id: selectedParentId,
+          name: med.name,
+          dose: med.dose,
+          frequency: med.frequency,
+          period: med.period || 'Mañana',
+          schedule_type: med.schedule_type || inferred.schedule_type || 'diario',
+          schedule_days: med.schedule_days !== undefined ? med.schedule_days : inferred.schedule_days,
+          comments: med.comments || '',
+          active: true
+        };
+      });
 
       const { error: insertError } = await supabase
         .from('medications')
@@ -337,12 +490,15 @@ export default function AdminPortal() {
 
   // Comenzar edición de un medicamento activo
   const startEditMed = (med: any) => {
+    const inferred = inferScheduleFromText(med.frequency, med.comments);
     setEditingMedId(med.id);
     setEditForm({
       name: med.name || '',
       dose: med.dose || '',
       frequency: med.frequency || '',
       period: med.period || 'Mañana',
+      schedule_type: (med.schedule_type as ScheduleType) || inferred.schedule_type || 'diario',
+      schedule_days: med.schedule_days !== undefined ? med.schedule_days : inferred.schedule_days,
       comments: med.comments || ''
     });
   };
@@ -360,26 +516,26 @@ export default function AdminPortal() {
 
     setIsSavingMed(true);
     try {
+      const payload: any = {
+        name: editForm.name.trim(),
+        dose: editForm.dose.trim(),
+        frequency: editForm.frequency.trim(),
+        period: editForm.period || 'Mañana',
+        schedule_type: editForm.schedule_type || 'diario',
+        schedule_days: editForm.schedule_days || '',
+        comments: editForm.comments.trim()
+      };
+
       const { error } = await supabase
         .from('medications')
-        .update({
-          name: editForm.name.trim(),
-          dose: editForm.dose.trim(),
-          frequency: editForm.frequency.trim(),
-          period: editForm.period || 'Mañana',
-          comments: editForm.comments.trim()
-        })
+        .update(payload)
         .eq('id', medId);
 
       if (error) throw error;
 
       setActiveMeds(prev => prev.map(m => m.id === medId ? {
         ...m,
-        name: editForm.name.trim(),
-        dose: editForm.dose.trim(),
-        frequency: editForm.frequency.trim(),
-        period: editForm.period || 'Mañana',
-        comments: editForm.comments.trim()
+        ...payload
       } : m));
 
       setEditingMedId(null);
@@ -400,17 +556,21 @@ export default function AdminPortal() {
 
     setIsSavingMed(true);
     try {
+      const payload: any = {
+        parent_id: selectedParentId,
+        name: manualMedForm.name.trim(),
+        dose: manualMedForm.dose.trim(),
+        frequency: manualMedForm.frequency.trim(),
+        period: manualMedForm.period || 'Mañana',
+        schedule_type: manualMedForm.schedule_type || 'diario',
+        schedule_days: manualMedForm.schedule_days || '',
+        comments: manualMedForm.comments.trim(),
+        active: true
+      };
+
       const { data, error } = await supabase
         .from('medications')
-        .insert([{
-          parent_id: selectedParentId,
-          name: manualMedForm.name.trim(),
-          dose: manualMedForm.dose.trim(),
-          frequency: manualMedForm.frequency.trim(),
-          period: manualMedForm.period || 'Mañana',
-          comments: manualMedForm.comments.trim(),
-          active: true
-        }])
+        .insert([payload])
         .select();
 
       if (error) throw error;
@@ -420,7 +580,7 @@ export default function AdminPortal() {
       }
 
       setIsAddingManualMed(false);
-      setManualMedForm({ name: '', dose: '', frequency: '', period: 'Mañana', comments: '' });
+      setManualMedForm({ name: '', dose: '', frequency: '', period: 'Mañana', schedule_type: 'diario', schedule_days: '', comments: '' });
       alert('¡Medicamento añadido y activado correctamente!');
     } catch (err: any) {
       alert(`Error al añadir medicamento: ${err.message || err}`);
@@ -849,12 +1009,21 @@ export default function AdminPortal() {
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                      <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Frecuencia</label>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Frecuencia (Texto)</label>
                       <input 
                         type="text" 
                         value={manualMedForm.frequency} 
-                        onChange={(e) => setManualMedForm(prev => ({ ...prev, frequency: e.target.value }))}
-                        placeholder="ej. 1 cada 8h"
+                        onChange={(e) => {
+                          const freq = e.target.value;
+                          const inferred = inferScheduleFromText(freq, manualMedForm.comments);
+                          setManualMedForm(prev => ({ 
+                            ...prev, 
+                            frequency: freq,
+                            schedule_type: prev.schedule_type === 'diario' && inferred.schedule_type !== 'diario' ? inferred.schedule_type : prev.schedule_type,
+                            schedule_days: !prev.schedule_days && inferred.schedule_days ? inferred.schedule_days : prev.schedule_days
+                          }));
+                        }}
+                        placeholder="ej. 1 cada 8h o Lunes y Jueves"
                         style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
                       />
                     </div>
@@ -872,6 +1041,14 @@ export default function AdminPortal() {
                       </select>
                     </div>
                   </div>
+
+                  {/* Selector de Periodicidad / Pauta Flexible */}
+                  <ScheduleSelector
+                    scheduleType={manualMedForm.schedule_type}
+                    scheduleDays={manualMedForm.schedule_days}
+                    onChangeType={(t) => setManualMedForm(prev => ({ ...prev, schedule_type: t }))}
+                    onChangeDays={(d) => setManualMedForm(prev => ({ ...prev, schedule_days: d }))}
+                  />
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                     <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Comentarios / Avisos tomas</label>
@@ -897,7 +1074,7 @@ export default function AdminPortal() {
               )}
 
               {/* Lista de medicamentos activos con modo lectura / edición */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '420px', overflowY: 'auto', paddingRight: '4px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '450px', overflowY: 'auto', paddingRight: '4px' }}>
                 {activeMeds.length === 0 ? (
                   <p style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem', fontStyle: 'italic', padding: '10px 0' }}>No hay medicamentos activos cargados para este padre.</p>
                 ) : (
@@ -937,7 +1114,7 @@ export default function AdminPortal() {
 
                           <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Frecuencia</label>
+                              <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Frecuencia (Texto)</label>
                               <input 
                                 type="text" 
                                 value={editForm.frequency} 
@@ -959,6 +1136,14 @@ export default function AdminPortal() {
                               </select>
                             </div>
                           </div>
+
+                          {/* Selector de Periodicidad / Pauta Flexible */}
+                          <ScheduleSelector
+                            scheduleType={editForm.schedule_type}
+                            scheduleDays={editForm.schedule_days}
+                            onChangeType={(t) => setEditForm(prev => ({ ...prev, schedule_type: t }))}
+                            onChangeDays={(d) => setEditForm(prev => ({ ...prev, schedule_days: d }))}
+                          />
 
                           <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                             <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Comentarios / Avisos tomas</label>
@@ -1005,6 +1190,17 @@ export default function AdminPortal() {
                               border: '1px solid rgba(59, 130, 246, 0.3)'
                             }}>
                               {med.period === 'Mediodia' ? '🍽️ Mediodía' : med.period === 'Tarde' ? '⛅ Tarde' : med.period === 'Noche' ? '🌙 Noche' : '☀️ Mañana'}
+                            </span>
+                            <span style={{ 
+                              fontSize: '0.75rem', 
+                              fontWeight: 700, 
+                              padding: '2px 8px', 
+                              borderRadius: '10px', 
+                              background: 'rgba(6, 182, 212, 0.12)', 
+                              color: '#22d3ee',
+                              border: '1px solid rgba(6, 182, 212, 0.3)'
+                            }}>
+                              {getScheduleDescription(med)}
                             </span>
                           </div>
                           <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem', marginTop: '3px' }}>
@@ -1066,7 +1262,7 @@ export default function AdminPortal() {
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <div style={{ maxHeight: '420px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '4px' }}>
+                <div style={{ maxHeight: '450px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingRight: '4px' }}>
                   {parsedMeds.map((med, index) => (
                     <div key={index} className="glass-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', borderLeft: '4px solid var(--color-info)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1097,13 +1293,23 @@ export default function AdminPortal() {
                         </div>
                       </div>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.1fr 1.5fr', gap: '12px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '12px' }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Frecuencia</label>
+                          <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Frecuencia (Texto)</label>
                           <input 
                             type="text" 
                             value={med.frequency} 
-                            onChange={(e) => handleParsedMedChange(index, 'frequency', e.target.value)}
+                            onChange={(e) => {
+                              const freq = e.target.value;
+                              const inferred = inferScheduleFromText(freq, med.comments);
+                              handleParsedMedChange(index, 'frequency', freq);
+                              if (!med.schedule_type || med.schedule_type === 'diario') {
+                                if (inferred.schedule_type !== 'diario') {
+                                  handleParsedMedChange(index, 'schedule_type', inferred.schedule_type);
+                                  handleParsedMedChange(index, 'schedule_days', inferred.schedule_days);
+                                }
+                              }
+                            }}
                             style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none' }}
                           />
                         </div>
@@ -1120,16 +1326,25 @@ export default function AdminPortal() {
                             <option value="Noche" style={{ background: '#0f172a' }}>🌙 Noche</option>
                           </select>
                         </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                          <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Comentarios / Avisos tomas</label>
-                          <input 
-                            type="text" 
-                            value={med.comments || ''} 
-                            onChange={(e) => handleParsedMedChange(index, 'comments', e.target.value)}
-                            placeholder="ej. Tomar con las comidas"
-                            style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none' }}
-                          />
-                        </div>
+                      </div>
+
+                      {/* Selector de Periodicidad / Pauta Flexible */}
+                      <ScheduleSelector
+                        scheduleType={(med.schedule_type as ScheduleType) || 'diario'}
+                        scheduleDays={med.schedule_days || ''}
+                        onChangeType={(t) => handleParsedMedChange(index, 'schedule_type', t)}
+                        onChangeDays={(d) => handleParsedMedChange(index, 'schedule_days', d)}
+                      />
+
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label style={{ fontSize: '0.8rem', color: 'var(--color-text-muted)' }}>Comentarios / Avisos tomas</label>
+                        <input 
+                          type="text" 
+                          value={med.comments || ''} 
+                          onChange={(e) => handleParsedMedChange(index, 'comments', e.target.value)}
+                          placeholder="ej. Tomar con las comidas"
+                          style={{ padding: '8px 12px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none' }}
+                        />
                       </div>
                     </div>
                   ))}

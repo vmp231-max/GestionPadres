@@ -44,7 +44,14 @@ Para cada medicamento, identifica con precisión:
 2. La dosis o presentación (ej. 500mg, 1 tableta, 10ml, 1 sobre).
 3. La frecuencia de las tomas y horarios recomendados (ej. Cada 8 horas, En el desayuno y cena, 1 vez al día).
 4. El momento del día correspondiente para la toma principal: debe ser exactamente uno de estos valores: "Mañana", "Mediodia", "Tarde" o "Noche" (ej. Desayuno = Mañana, Comida/Almuerzo = Mediodia, Merienda = Tarde, Cena/Dormir = Noche).
-5. Cualquier comentario, advertencia o instrucción de administración especial (ej. Tomar con las comidas, No tomar con leche, Mantener en nevera).
+5. El tipo de periodicidad o pauta de administración:
+   - "diario": Si se toma todos los días.
+   - "dias_semana": Si se toma días específicos de la semana (ej. Lunes y Jueves, L-M-V). En 'schedule_days' pon las iniciales de los días separadas por comas usando: L, M, X, J, V, S, D (ej. "L,J" o "L,X,V").
+   - "dias_alternos": Si se toma en días alternos o cada 2 días (cada 48 horas).
+   - "semanal": Si se toma 1 día concreto a la semana (ej. todos los lunes pon "L" en 'schedule_days').
+   - "mensual": Si se toma 1 día concreto del mes (ej. día 1 de cada mes pon "1" en 'schedule_days').
+   - "segun_necesidad": Si es medicación "si precisa", "SOS", "en caso de dolor" o a demanda.
+6. Cualquier comentario, advertencia o instrucción de administración especial (ej. Tomar con las comidas, No tomar con leche, Mantener en nevera).
 
 Asegúrate de traducir términos complejos o abreviaturas médicas a lenguaje claro y sencillo comprensible para personas mayores.`;
 
@@ -77,9 +84,17 @@ Asegúrate de traducir términos complejos o abreviaturas médicas a lenguaje cl
                     type: 'STRING', 
                     description: 'Momento del día principal para la toma. Valores posibles: "Mañana", "Mediodia", "Tarde", "Noche"' 
                   },
+                  schedule_type: {
+                    type: 'STRING',
+                    description: 'Tipo de periodicidad: "diario", "dias_semana", "dias_alternos", "semanal", "mensual", "segun_necesidad"'
+                  },
+                  schedule_days: {
+                    type: 'STRING',
+                    description: 'Días asociados a la pauta (ej. "L,J", "L,X,V", "L", "1" o vacío)'
+                  },
                   comments: { type: 'STRING', description: 'Comentarios adicionales (ej. Con el desayuno)' }
                 },
-                required: ['name', 'dose', 'frequency', 'period']
+                required: ['name', 'dose', 'frequency', 'period', 'schedule_type']
               }
             }
           },

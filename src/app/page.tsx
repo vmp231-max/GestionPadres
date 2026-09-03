@@ -18,8 +18,14 @@ import {
   ChevronDown,
   ChevronUp,
   Lock,
-  Delete
+  Delete,
+  Activity
 } from 'lucide-react';
+import { 
+  isScheduledForToday, 
+  isPrnMedication, 
+  getScheduleDescription 
+} from '@/lib/medication-schedule';
 
 interface Parent {
   id: string;
@@ -42,8 +48,11 @@ interface Medication {
   dose: string;
   frequency: string;
   period?: string;
+  schedule_type?: string;
+  schedule_days?: string;
   comments?: string;
   active: boolean;
+  created_at?: string;
 }
 
 interface Notice {
@@ -443,15 +452,25 @@ export default function TabletDashboard() {
     }
   };
 
-  // Clasificar medicamentos por momento del día (Mañana, Mediodia, Tarde, Noche)
+  // Clasificar medicamentos por momento del día (Mañana, Mediodia, Tarde, Noche) programados para HOY
   const getMedicationByPeriod = (period: 'mañana' | 'mediodia' | 'tarde' | 'noche', includeTaken: boolean = false) => {
     return medications.filter(med => {
-      // Si no se pide incluir las tomadas, excluir los medicamentos ya tomados hoy
+      // 1. Excluir medicamentos SOS / Si precisa (esos van en su sección especial)
+      if (isPrnMedication(med)) {
+        return false;
+      }
+
+      // 2. Comprobar si corresponde tomarlo HOY según su pauta/periodicidad
+      if (!isScheduledForToday(med)) {
+        return false;
+      }
+
+      // 3. Si no se pide incluir las tomadas, excluir los medicamentos ya tomados hoy
       if (!includeTaken && takenMeds.includes(med.id)) {
         return false;
       }
 
-      // 1. Si el medicamento tiene configurado explícitamente el campo 'period', respetarlo
+      // 4. Si el medicamento tiene configurado explícitamente el campo 'period', respetarlo
       if (med.period) {
         const norm = med.period.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
         const target = period.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
@@ -459,7 +478,7 @@ export default function TabletDashboard() {
         return false;
       }
 
-      // 2. Heurística de retrocompatibilidad para registros antiguos sin campo 'period'
+      // 5. Heurística de retrocompatibilidad para registros antiguos sin campo 'period'
       const freq = (med.frequency + ' ' + (med.comments || '')).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
       
       if (period === 'mañana') {
@@ -821,9 +840,9 @@ export default function TabletDashboard() {
               <Pill size={28} color="var(--color-success)" />
               Medicamentos del Día
             </h2>
-            {medications.length > 0 && (
+            {medications.filter(m => !isPrnMedication(m) && isScheduledForToday(m)).length > 0 && (
               <span style={{ fontSize: '0.95rem', color: 'var(--color-text-secondary)', fontWeight: 600 }}>
-                {medications.filter(m => !takenMeds.includes(m.id)).length} pendientes
+                {medications.filter(m => !isPrnMedication(m) && isScheduledForToday(m) && !takenMeds.includes(m.id)).length} pendientes hoy
               </span>
             )}
           </div>
@@ -834,7 +853,13 @@ export default function TabletDashboard() {
                 <Pill size={48} strokeWidth={1} />
                 <p style={{ fontSize: '1.25rem' }}>No hay medicamentos activos cargados</p>
               </div>
-            ) : medications.filter(m => !takenMeds.includes(m.id)).length === 0 ? (
+            ) : medications.filter(m => !isPrnMedication(m) && isScheduledForToday(m)).length === 0 && medications.filter(m => isPrnMedication(m)).length === 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '12px', padding: '40px 20px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+                <Calendar size={48} strokeWidth={1} />
+                <p style={{ fontSize: '1.25rem', color: 'var(--color-text-primary)', fontWeight: 700 }}>Hoy no tienes medicamentos programados</p>
+                <p style={{ fontSize: '1rem', color: 'var(--color-text-secondary)' }}>Tus pautas de medicación no tienen tomas programadas para el día de hoy.</p>
+              </div>
+            ) : medications.filter(m => !isPrnMedication(m) && isScheduledForToday(m) && !takenMeds.includes(m.id)).length === 0 && medications.filter(m => !isPrnMedication(m) && isScheduledForToday(m)).length > 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '16px', padding: '40px 20px', textAlign: 'center' }}>
                 <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'var(--color-success-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--color-success)' }}>
                   <Check size={44} strokeWidth={3} />
@@ -874,8 +899,21 @@ export default function TabletDashboard() {
                           }}
                         >
                           <div style={{ flex: 1 }}>
-                            <h4 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>{med.name}</h4>
-                            <p style={{ fontSize: '1.05rem', color: 'var(--color-text-secondary)', fontWeight: 500 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                              <h4 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>{med.name}</h4>
+                              <span style={{ 
+                                fontSize: '0.75rem', 
+                                fontWeight: 700, 
+                                padding: '2px 8px', 
+                                borderRadius: '10px', 
+                                background: 'rgba(6, 182, 212, 0.12)', 
+                                color: 'var(--color-info)',
+                                border: '1px solid rgba(6, 182, 212, 0.25)'
+                              }}>
+                                {getScheduleDescription(med)}
+                              </span>
+                            </div>
+                            <p style={{ fontSize: '1.05rem', color: 'var(--color-text-secondary)', fontWeight: 500, marginTop: '2px' }}>
                               Dosis: {med.dose} | {med.frequency}
                             </p>
                             {med.comments && (
@@ -909,6 +947,77 @@ export default function TabletDashboard() {
                 );
               })
             )}
+
+            {/* SECCIÓN ESPECIAL: MEDICAMENTOS SEGÚN NECESIDAD / SI PRECISA (SOS) */}
+            {medications.filter(m => isPrnMedication(m)).length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px', paddingTop: '16px', borderTop: '1px dashed var(--glass-border)' }}>
+                <h3 style={{ fontSize: '1.2rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--color-warning)' }}>
+                  <span>🆘</span>
+                  <span>Si Precisa / Según Necesidad (Opcional)</span>
+                </h3>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {medications.filter(m => isPrnMedication(m)).map(med => {
+                    const isTaken = takenMeds.includes(med.id);
+                    return (
+                      <div
+                        key={med.id}
+                        className="glass-card"
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: '16px',
+                          padding: '16px',
+                          borderLeft: isTaken ? '4px solid var(--color-success)' : '4px solid var(--color-warning)',
+                          background: isTaken ? 'rgba(16, 185, 129, 0.05)' : 'rgba(255, 255, 255, 0.02)'
+                        }}
+                      >
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <h4 style={{ fontSize: '1.2rem', fontWeight: 700, color: isTaken ? 'var(--color-text-muted)' : 'var(--color-text-primary)' }}>{med.name}</h4>
+                            <span className="badge badge-warning" style={{ fontSize: '0.75rem', padding: '2px 8px' }}>Si precisa</span>
+                          </div>
+                          <p style={{ fontSize: '1.05rem', color: 'var(--color-text-secondary)', fontWeight: 500, marginTop: '2px' }}>
+                            Dosis: {med.dose} {med.frequency ? `| ${med.frequency}` : ''}
+                          </p>
+                          {med.comments && (
+                            <p style={{ fontSize: '0.95rem', color: 'var(--color-warning)', marginTop: '4px', fontStyle: 'italic' }}>
+                              💡 {med.comments}
+                            </p>
+                          )}
+                        </div>
+
+                        <button
+                          onClick={() => toggleMedTaken(med.id)}
+                          className={`btn ${isTaken ? 'btn-success' : 'btn-secondary'}`}
+                          style={{
+                            minWidth: '120px',
+                            height: '56px',
+                            fontSize: '1rem',
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: '8px'
+                          }}
+                        >
+                          {isTaken ? (
+                            <>
+                              <Check size={18} />
+                              <span>Tomada</span>
+                            </>
+                          ) : (
+                            <span>Tomar</span>
+                          )}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
           </div>
 
           {/* Cajón colapsable para consultar o desmarcar medicamentos ya tomados */}

@@ -22,6 +22,8 @@ create table public.medications (
     dose text not null,
     frequency text not null,
     period text default 'Mañana' not null,
+    schedule_type text default 'diario' not null,
+    schedule_days text default '' not null,
     comments text,
     active boolean default true not null,
     created_at timestamp with time zone default timezone('utc'::text, now()) not null,
@@ -99,3 +101,8 @@ create policy "Permitir gestión completa de avisos a cualquiera" on public.noti
 alter publication supabase_realtime add table public.notices;
 alter publication supabase_realtime add table public.medications;
 alter publication supabase_realtime add table public.appointments;
+
+-- 7. Migración para añadir soporte de periodicidades avanzadas a tablas existentes
+alter table public.medications add column if not exists schedule_type text default 'diario' not null;
+alter table public.medications add column if not exists schedule_days text default '' not null;
+
