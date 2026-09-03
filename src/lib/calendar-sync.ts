@@ -19,7 +19,7 @@ export interface CalendarSyncResponse {
 export const AUTO_SYNC_INTERVAL_HOURS = 5;
 export const AUTO_SYNC_INTERVAL_MS = AUTO_SYNC_INTERVAL_HOURS * 60 * 60 * 1000;
 
-export async function performCalendarSync(): Promise<CalendarSyncResponse> {
+export async function performCalendarSync(accountId?: string): Promise<CalendarSyncResponse> {
   const timestamp = new Date().toISOString();
 
   try {
@@ -47,37 +47,24 @@ export async function performCalendarSync(): Promise<CalendarSyncResponse> {
 
     const calendar = google.calendar({ version: 'v3', auth });
 
-    // Obtener los perfiles de los padres
-    const { data: parents, error: parentsError } = await supabase
-      .from('parents')
-      .select('id, name');
+    // Obtener los perfiles de los familiares
+    let query = supabase.from('parents').select('id, name, account_id, calendar_id');
+    if (accountId) {
+      query = query.eq('account_id', accountId);
+    }
+
+    const { data: parents, error: parentsError } = await query;
 
     if (parentsError || !parents || parents.length === 0) {
-      const errorMsg = 'No se encontraron perfiles de padres en la base de datos.';
-      console.error(`[CalendarSync] ${errorMsg}`, parentsError);
+      const errorMsg = 'No se encontraron perfiles de familiares en la base de datos para sincronizar.';
+      console.warn(`[CalendarSync] ${errorMsg}`);
       return {
-        success: false,
+        success: true,
         timestamp,
         results: [],
         error: errorMsg,
       };
     }
-
-    const mamaProfile = parents.find((p) => p.name === 'Mamá');
-    const papaProfile = parents.find((p) => p.name === 'Papá');
-
-    const calendarsToSync = [
-      {
-        profile: mamaProfile,
-        calendarId: process.env.GOOGLE_CALENDAR_ID_MAMA,
-        name: 'Mamá',
-      },
-      {
-        profile: papaProfile,
-        calendarId: process.env.GOOGLE_CALENDAR_ID_PAPA,
-        name: 'Papá',
-      },
-    ];
 
     const syncResults: CalendarSyncResultItem[] = [];
 
@@ -86,28 +73,29 @@ export async function performCalendarSync(): Promise<CalendarSyncResponse> {
     const timeMax = new Date();
     timeMax.setDate(timeMax.getDate() + 90);
 
-    for (const cal of calendarsToSync) {
-      if (!cal.calendarId) {
-        syncResults.push({
-          name: cal.name,
-          status: 'skipped',
-          detail: 'ID de calendario no configurado',
-        });
-        continue;
+    for (const parent of parents) {
+      // Determinar ID del calendario: configurado en base de datos o variable de entorno por nombre
+      let calId = parent.calendar_id;
+      if (!calId) {
+        if (parent.name.toLowerCase().includes('mamá') || parent.name.toLowerCase().includes('mama')) {
+          calId = process.env.GOOGLE_CALENDAR_ID_MAMA;
+        } else if (parent.name.toLowerCase().includes('papá') || parent.name.toLowerCase().includes('papa')) {
+          calId = process.env.GOOGLE_CALENDAR_ID_PAPA;
+        }
       }
 
-      if (!cal.profile) {
+      if (!calId || !calId.trim()) {
         syncResults.push({
-          name: cal.name,
-          status: 'failed',
-          detail: 'Perfil no encontrado en la base de datos',
+          name: parent.name,
+          status: 'skipped',
+          detail: 'ID de calendario no configurado (puedes añadirlo en /admin)',
         });
         continue;
       }
 
       try {
         const response = await calendar.events.list({
-          calendarId: cal.calendarId,
+          calendarId: calId.trim(),
           timeMin: timeMin.toISOString(),
           timeMax: timeMax.toISOString(),
           singleEvents: true,
@@ -127,13 +115,14 @@ export async function performCalendarSync(): Promise<CalendarSyncResponse> {
           if (!startStr || !endStr) continue;
 
           const appointmentData = {
-            parent_id: cal.profile.id,
+            account_id: parent.account_id || accountId || null,
+            parent_id: parent.id,
             title: event.summary || 'Cita médica sin título',
             description: event.description || '',
             start_time: new Date(startStr).toISOString(),
             end_time: new Date(endStr).toISOString(),
             location: event.location || '',
-            google_event_id: event.id,
+            google_event_id: `${parent.id}_${event.id}`,
           };
 
           const { error: upsertErr } = await supabase
@@ -147,40 +136,33 @@ export async function performCalendarSync(): Promise<CalendarSyncResponse> {
         }
 
         // Limpieza de eventos cancelados
-        let deleteError;
         if (activeGoogleIds.length > 0) {
-          const formattedIds = activeGoogleIds.map((id) => `"${id}"`).join(',');
-          const result = await supabase
+          const formattedIds = activeGoogleIds.map((id) => `"${parent.id}_${id}"`).join(',');
+          await supabase
             .from('appointments')
             .delete()
-            .eq('parent_id', cal.profile.id)
+            .eq('parent_id', parent.id)
             .gte('start_time', timeMin.toISOString())
             .lte('start_time', timeMax.toISOString())
             .not('google_event_id', 'in', `(${formattedIds})`);
-          deleteError = result.error;
         } else {
-          const result = await supabase
+          await supabase
             .from('appointments')
             .delete()
-            .eq('parent_id', cal.profile.id)
+            .eq('parent_id', parent.id)
             .gte('start_time', timeMin.toISOString())
             .lte('start_time', timeMax.toISOString());
-          deleteError = result.error;
-        }
-
-        if (deleteError) {
-          console.error(`[CalendarSync] Error al borrar citas huérfanas de ${cal.name}:`, deleteError);
         }
 
         syncResults.push({
-          name: cal.name,
+          name: parent.name,
           status: 'success',
           syncedCount: events.length,
         });
       } catch (err: any) {
-        console.error(`[CalendarSync] Error al sincronizar citas de ${cal.name}:`, err);
+        console.error(`[CalendarSync] Error al sincronizar citas de ${parent.name}:`, err);
         syncResults.push({
-          name: cal.name,
+          name: parent.name,
           status: 'failed',
           detail: err.message || String(err),
         });

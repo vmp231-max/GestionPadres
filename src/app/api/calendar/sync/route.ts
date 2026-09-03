@@ -4,6 +4,7 @@ import { performCalendarSync, getLastCalendarSync, AUTO_SYNC_INTERVAL_HOURS } fr
 export async function GET(req: NextRequest) {
   try {
     const onlyStatus = req.nextUrl.searchParams.get('status') === 'true';
+    const accountId = req.nextUrl.searchParams.get('accountId') || undefined;
 
     if (onlyStatus) {
       const lastSync = getLastCalendarSync();
@@ -13,7 +14,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const result = await performCalendarSync();
+    const result = await performCalendarSync(accountId);
     return NextResponse.json({
       ...result,
       autoSyncIntervalHours: AUTO_SYNC_INTERVAL_HOURS,

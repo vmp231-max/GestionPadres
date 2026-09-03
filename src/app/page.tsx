@@ -74,7 +74,7 @@ export default function TabletDashboard() {
   const [showTakenMeds, setShowTakenMeds] = useState<boolean>(false);
   const [timeString, setTimeString] = useState<string>('');
   const [dateString, setDateString] = useState<string>('');
-  const [loading, setLoading] = useState<boolean>(true);
+  const [loading, setLoading] = useState<boolean>(false);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [authChecking, setAuthChecking] = useState<boolean>(true);
   const [inputPin, setInputPin] = useState<string>('');
@@ -537,7 +537,7 @@ export default function TabletDashboard() {
     }
   };
 
-  if (loading || authChecking) {
+  if (authChecking || (isAuthenticated && loading)) {
     return (
       <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: '20px' }}>
         <div style={{ width: '50px', height: '50px', border: '5px solid var(--glass-border)', borderTopColor: 'var(--color-info)', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>

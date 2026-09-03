@@ -41,6 +41,7 @@ interface Parent {
   id: string;
   account_id?: string;
   name: string;
+  calendar_id?: string | null;
   avatar_url?: string;
 }
 
@@ -226,8 +227,10 @@ export default function AdminPortal() {
   const [selectedParentId, setSelectedParentId] = useState<string>('');
   const [isAddingParent, setIsAddingParent] = useState(false);
   const [newParentName, setNewParentName] = useState('');
+  const [newParentCalendarId, setNewParentCalendarId] = useState('');
   const [editingParentId, setEditingParentId] = useState<string | null>(null);
   const [editingParentName, setEditingParentName] = useState('');
+  const [editingParentCalendarId, setEditingParentCalendarId] = useState('');
   
   // Medicamentos
   const [activeMeds, setActiveMeds] = useState<any[]>([]);
@@ -323,41 +326,23 @@ export default function AdminPortal() {
       const accountId = account?.id;
       if (!accountId) return;
 
-      // Cargar familiares de esta cuenta
+      // Cargar familiares de esta cuenta exclusivamente
       let { data: parentsData } = await supabase
         .from('parents')
         .select('*')
         .eq('account_id', accountId)
         .order('name');
 
-      // Si la cuenta no tiene familiares aún pero existen registros sin account_id, vincularlos
+      // Si la cuenta no tiene familiares aún, crear Mamá y Papá por defecto para esta cuenta
       if (!parentsData || parentsData.length === 0) {
-        const { data: orphanParents } = await supabase
+        const { data: newParents } = await supabase
           .from('parents')
-          .select('*')
-          .is('account_id', null);
-
-        if (orphanParents && orphanParents.length > 0) {
-          for (const p of orphanParents) {
-            await supabase.from('parents').update({ account_id: accountId }).eq('id', p.id);
-          }
-          const { data: updatedParents } = await supabase
-            .from('parents')
-            .select('*')
-            .eq('account_id', accountId)
-            .order('name');
-          parentsData = updatedParents;
-        } else {
-          // Si es cuenta nueva vacía, crear Mamá y Papá por defecto
-          const { data: newParents } = await supabase
-            .from('parents')
-            .insert([
-              { account_id: accountId, name: 'Mamá' },
-              { account_id: accountId, name: 'Papá' }
-            ])
-            .select();
-          parentsData = newParents;
-        }
+          .insert([
+            { account_id: accountId, name: 'Mamá' },
+            { account_id: accountId, name: 'Papá' }
+          ])
+          .select();
+        parentsData = newParents;
       }
 
       setParents(parentsData || []);
@@ -374,6 +359,8 @@ export default function AdminPortal() {
           .eq('parent_id', activeParentId)
           .eq('active', true);
         setActiveMeds(medsData || []);
+      } else {
+        setActiveMeds([]);
       }
 
       // Cargar avisos asociados a esta cuenta o sus familiares
@@ -425,6 +412,8 @@ export default function AdminPortal() {
         .then(({ data }) => {
           setActiveMeds(data || []);
         });
+    } else {
+      setActiveMeds([]);
     }
   }, [selectedParentId, session]);
 
@@ -479,7 +468,11 @@ export default function AdminPortal() {
     try {
       const { data, error } = await supabase
         .from('parents')
-        .insert([{ account_id: currentAccount.id, name: newParentName.trim() }])
+        .insert([{ 
+          account_id: currentAccount.id, 
+          name: newParentName.trim(),
+          calendar_id: newParentCalendarId.trim() || null
+        }])
         .select()
         .single();
 
@@ -487,6 +480,7 @@ export default function AdminPortal() {
 
       setParents(prev => [...prev, data]);
       setNewParentName('');
+      setNewParentCalendarId('');
       setIsAddingParent(false);
       if (!selectedParentId) setSelectedParentId(data.id);
       alert(`¡Familiar "${data.name}" añadido correctamente a tu cuenta!`);
@@ -495,21 +489,35 @@ export default function AdminPortal() {
     }
   };
 
-  const handleUpdateParentName = async (parentId: string) => {
+  const startEditParent = (p: Parent) => {
+    setEditingParentId(p.id);
+    setEditingParentName(p.name);
+    setEditingParentCalendarId(p.calendar_id || '');
+  };
+
+  const handleUpdateParent = async (parentId: string) => {
     if (!editingParentName.trim()) return;
 
     try {
       const { error } = await supabase
         .from('parents')
-        .update({ name: editingParentName.trim() })
+        .update({ 
+          name: editingParentName.trim(),
+          calendar_id: editingParentCalendarId.trim() || null
+        })
         .eq('id', parentId);
 
       if (error) throw error;
 
-      setParents(prev => prev.map(p => p.id === parentId ? { ...p, name: editingParentName.trim() } : p));
+      setParents(prev => prev.map(p => p.id === parentId ? { 
+        ...p, 
+        name: editingParentName.trim(),
+        calendar_id: editingParentCalendarId.trim() || null
+      } : p));
       setEditingParentId(null);
+      alert('¡Perfil del familiar actualizado correctamente!');
     } catch (err: any) {
-      alert(`Error al actualizar nombre: ${err.message || err}`);
+      alert(`Error al actualizar familiar: ${err.message || err}`);
     }
   };
 
@@ -578,16 +586,17 @@ export default function AdminPortal() {
     setIsSyncing(true);
     setSyncStatus('Sincronizando...');
     try {
-      const res = await fetch('/api/calendar/sync');
+      const url = currentAccount?.id ? `/api/calendar/sync?accountId=${currentAccount.id}` : '/api/calendar/sync';
+      const res = await fetch(url);
       const data = await res.json();
       
       if (!res.ok) throw new Error(data.error || 'Error desconocido');
       
-      const successResults = data.results
+      const successResults = (data.results || [])
         .map((r: any) => `${r.name}: ${r.status === 'success' ? `Sincronizada (${r.syncedCount} citas)` : `Fallo (${r.detail})`}`)
         .join(', ');
         
-      setSyncStatus(`Completado: ${successResults}`);
+      setSyncStatus(`Completado: ${successResults || 'Sin calendarios vinculados'}`);
       loadAdminData(); // Recargar citas en el admin
     } catch (err: any) {
       setSyncStatus(`Error: ${err.message || err}`);
@@ -1097,28 +1106,45 @@ export default function AdminPortal() {
 
           {/* Formulario para añadir familiar */}
           {isAddingParent && (
-            <form onSubmit={handleAddParent} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.03)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--glass-border)' }}>
-              <input 
-                type="text" 
-                required
-                value={newParentName}
-                onChange={(e) => setNewParentName(e.target.value)}
-                placeholder="Nombre del familiar (ej. Mamá, Papá, Abuela Carmen)"
-                style={{ flex: 1, padding: '6px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '4px', color: '#ffffff', outline: 'none', fontSize: '0.9rem' }}
-                autoFocus
-              />
-              <button type="submit" className="btn btn-success" style={{ padding: '6px 12px', fontSize: '0.85rem' }}>
-                <Check size={14} />
-                <span>Guardar</span>
-              </button>
-              <button type="button" onClick={() => setIsAddingParent(false)} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.85rem' }}>
-                Cancelar
-              </button>
+            <form onSubmit={handleAddParent} style={{ display: 'flex', flexDirection: 'column', gap: '10px', background: 'rgba(255,255,255,0.03)', padding: '14px 16px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--glass-border)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', fontWeight: 600 }}>Nombre del familiar *</label>
+                  <input 
+                    type="text" 
+                    required
+                    value={newParentName}
+                    onChange={(e) => setNewParentName(e.target.value)}
+                    placeholder="ej. Mamá, Papá, Abuela Carmen"
+                    style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '4px', color: '#ffffff', outline: 'none', fontSize: '0.9rem' }}
+                    autoFocus
+                  />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', fontWeight: 600 }}>ID de Google Calendar (Opcional)</label>
+                  <input 
+                    type="text" 
+                    value={newParentCalendarId}
+                    onChange={(e) => setNewParentCalendarId(e.target.value)}
+                    placeholder="ej. ejemplo@gmail.com o ID de calendario"
+                    style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: '4px', color: '#ffffff', outline: 'none', fontSize: '0.9rem' }}
+                  />
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                <button type="submit" className="btn btn-success" style={{ padding: '6px 14px', fontSize: '0.85rem' }}>
+                  <Check size={14} />
+                  <span>Guardar Familiar</span>
+                </button>
+                <button type="button" onClick={() => setIsAddingParent(false)} className="btn btn-secondary" style={{ padding: '6px 14px', fontSize: '0.85rem' }}>
+                  Cancelar
+                </button>
+              </div>
             </form>
           )}
 
-          {/* Chips de familiares */}
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          {/* Chips y tarjetas de familiares */}
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             {parents.length === 0 ? (
               <p style={{ color: 'var(--color-text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>No hay familiares registrados. Pulsa "+ Añadir Familiar" para comenzar.</p>
             ) : (
@@ -1128,16 +1154,35 @@ export default function AdminPortal() {
 
                 if (isEditingThis) {
                   return (
-                    <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(255,255,255,0.05)', padding: '4px 8px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-info)' }}>
-                      <input 
-                        type="text"
-                        value={editingParentName}
-                        onChange={(e) => setEditingParentName(e.target.value)}
-                        style={{ padding: '2px 6px', fontSize: '0.85rem', background: '#0f172a', border: '1px solid var(--glass-border)', borderRadius: '4px', color: '#ffffff' }}
-                        autoFocus
-                      />
-                      <button onClick={() => handleUpdateParentName(p.id)} style={{ background: 'transparent', border: 'none', color: 'var(--color-success)', cursor: 'pointer' }}><Check size={14} /></button>
-                      <button onClick={() => setEditingParentId(null)} style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer' }}><X size={14} /></button>
+                    <div key={p.id} style={{ display: 'flex', flexDirection: 'column', gap: '8px', background: 'rgba(255,255,255,0.05)', padding: '12px 14px', borderRadius: 'var(--radius-sm)', border: '1px solid var(--color-info)', width: '100%', maxWidth: '420px' }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Nombre</label>
+                        <input 
+                          type="text"
+                          value={editingParentName}
+                          onChange={(e) => setEditingParentName(e.target.value)}
+                          style={{ padding: '6px 8px', fontSize: '0.9rem', background: '#0f172a', border: '1px solid var(--glass-border)', borderRadius: '4px', color: '#ffffff' }}
+                          autoFocus
+                        />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>ID de Google Calendar</label>
+                        <input 
+                          type="text"
+                          value={editingParentCalendarId}
+                          onChange={(e) => setEditingParentCalendarId(e.target.value)}
+                          placeholder="ej. correo@gmail.com o ID de calendario"
+                          style={{ padding: '6px 8px', fontSize: '0.85rem', background: '#0f172a', border: '1px solid var(--glass-border)', borderRadius: '4px', color: '#ffffff' }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                        <button onClick={() => handleUpdateParent(p.id)} className="btn btn-success" style={{ padding: '4px 10px', fontSize: '0.8rem' }}>
+                          <Check size={14} /> Guardar
+                        </button>
+                        <button onClick={() => setEditingParentId(null)} className="btn btn-secondary" style={{ padding: '4px 10px', fontSize: '0.8rem' }}>
+                          <X size={14} /> Cancelar
+                        </button>
+                      </div>
                     </div>
                   );
                 }
@@ -1147,36 +1192,47 @@ export default function AdminPortal() {
                     key={p.id}
                     style={{
                       display: 'flex',
-                      alignItems: 'center',
-                      gap: '8px',
-                      padding: '6px 12px',
+                      flexDirection: 'column',
+                      gap: '4px',
+                      padding: '8px 14px',
                       borderRadius: 'var(--radius-sm)',
-                      background: isSelected ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255, 255, 255, 0.03)',
+                      background: isSelected ? 'rgba(59, 130, 246, 0.18)' : 'rgba(255, 255, 255, 0.03)',
                       border: isSelected ? '1px solid #3b82f6' : '1px solid var(--glass-border)',
                       cursor: 'pointer',
                       transition: 'all 0.15s ease'
                     }}
                     onClick={() => setSelectedParentId(p.id)}
                   >
-                    <span style={{ fontWeight: isSelected ? 700 : 500, color: isSelected ? '#60a5fa' : 'var(--color-text-primary)', fontSize: '0.95rem' }}>
-                      {p.name}
-                    </span>
-                    <button 
-                      onClick={(e) => { e.stopPropagation(); setEditingParentId(p.id); setEditingParentName(p.name); }}
-                      style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', padding: '2px' }}
-                      title="Renombrar familiar"
-                    >
-                      <Pencil size={12} />
-                    </button>
-                    {parents.length > 1 && (
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handleDeleteParent(p.id, p.name); }}
-                        style={{ background: 'transparent', border: 'none', color: 'var(--color-error)', cursor: 'pointer', padding: '2px' }}
-                        title="Eliminar familiar"
-                      >
-                        <Trash2 size={12} />
-                      </button>
-                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+                      <span style={{ fontWeight: isSelected ? 700 : 600, color: isSelected ? '#60a5fa' : 'var(--color-text-primary)', fontSize: '1rem' }}>
+                        {p.name}
+                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); startEditParent(p); }}
+                          style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', padding: '2px' }}
+                          title="Editar nombre e ID de calendario"
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        {parents.length > 1 && (
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleDeleteParent(p.id, p.name); }}
+                            style={{ background: 'transparent', border: 'none', color: 'var(--color-error)', cursor: 'pointer', padding: '2px' }}
+                            title="Eliminar familiar"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.75rem', color: p.calendar_id ? 'var(--color-info)' : 'var(--color-text-muted)' }}>
+                      <Calendar size={11} />
+                      <span style={{ maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {p.calendar_id || 'Sin calendario ID'}
+                      </span>
+                    </div>
                   </div>
                 );
               })

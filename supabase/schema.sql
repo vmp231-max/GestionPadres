@@ -7,7 +7,7 @@ create extension if not exists "uuid-ossp";
 create table if not exists public.accounts (
     id uuid default gen_random_uuid() primary key,
     user_id uuid references auth.users(id) on delete cascade unique,
-    name text not null, -- ej. 'Familia Martínez'
+    name text not null default 'Mi Familia',
     tablet_pin text default '1234' not null,
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
@@ -17,6 +17,7 @@ create table if not exists public.parents (
     id uuid default gen_random_uuid() primary key,
     account_id uuid references public.accounts(id) on delete cascade,
     name text not null, -- ej. 'Mamá', 'Papá', 'Abuela Carmen'
+    calendar_id text, -- ID de Google Calendar específico del familiar
     avatar_url text,
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
@@ -60,7 +61,7 @@ create table if not exists public.appointments (
     start_time timestamp with time zone not null,
     end_time timestamp with time zone not null,
     location text,
-    google_event_id text,
+    google_event_id text unique,
     created_at timestamp with time zone default timezone('utc'::text, now()) not null,
     updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
@@ -89,10 +90,10 @@ alter table public.appointments enable row level security;
 alter table public.notices enable row level security;
 
 -- Políticas de acceso
-create policy "Permitir gestión de accounts a cualquiera o authenticated" on public.accounts
+create policy "Permitir acceso a accounts" on public.accounts
     for all using (true);
 
-create policy "Permitir lectura y gestión de parents" on public.parents
+create policy "Permitir acceso a parents" on public.parents
     for all using (true);
 
 create policy "Permitir gestión completa de medicación" on public.medications
@@ -110,7 +111,7 @@ alter publication supabase_realtime add table public.medications;
 alter publication supabase_realtime add table public.appointments;
 
 -- 8. Migración para actualizar bases de datos existentes
--- Ejecuta este bloque en Supabase SQL Editor si ya tienes tablas creadas:
+-- Ejecuta este bloque en Supabase SQL Editor:
 /*
 create table if not exists public.accounts (
     id uuid default gen_random_uuid() primary key,
@@ -120,7 +121,11 @@ create table if not exists public.accounts (
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
+alter table public.accounts enable row level security;
+create policy "Permitir acceso a accounts" on public.accounts for all using (true);
+
 alter table public.parents add column if not exists account_id uuid references public.accounts(id) on delete cascade;
+alter table public.parents add column if not exists calendar_id text;
 alter table public.appointments add column if not exists account_id uuid references public.accounts(id) on delete cascade;
 alter table public.notices add column if not exists account_id uuid references public.accounts(id) on delete cascade;
 alter table public.medications add column if not exists schedule_type text default 'diario' not null;
