@@ -57,6 +57,7 @@ interface Medication {
 
 interface Notice {
   id: string;
+  account_id?: string;
   parent_id: string | null;
   message: string;
   type: 'info' | 'warning' | 'alert';
@@ -308,13 +309,23 @@ export default function TabletDashboard() {
       if (medsError) throw medsError;
       setMedications(meds || []);
 
-      // Avisos no leídos (específicos de este padre o de ambos 'parent_id IS NULL')
-      const { data: ntc, error: ntcError } = await supabase
+      // Avisos no leídos pertenecientes EXCLUSIVAMENTE a esta cuenta familiar
+      // (específicos de este familiar o para toda la familia 'parent_id IS NULL')
+      let ntcQuery = supabase
         .from('notices')
         .select('*')
-        .or(`parent_id.eq.${parentId},parent_id.is.null`)
         .eq('is_read', false)
         .order('created_at', { ascending: false });
+
+      if (linkedAccountId && linkedAccountId !== 'default') {
+        ntcQuery = ntcQuery
+          .eq('account_id', linkedAccountId)
+          .or(`parent_id.eq.${parentId},parent_id.is.null`);
+      } else {
+        ntcQuery = ntcQuery.eq('parent_id', parentId);
+      }
+
+      const { data: ntc, error: ntcError } = await ntcQuery;
 
       if (ntcError) throw ntcError;
       setNotices(ntc || []);
@@ -322,7 +333,7 @@ export default function TabletDashboard() {
     } catch (err) {
       console.error('Error al cargar datos del dashboard:', err);
     }
-  }, []);
+  }, [linkedAccountId]);
 
   useEffect(() => {
     if (!selectedParent) return;
@@ -340,11 +351,17 @@ export default function TabletDashboard() {
           console.log('[Realtime] Cambio detectado en avisos:', payload);
           if (payload.eventType === 'INSERT') {
             const newNotice = payload.new as Notice;
-            if (!newNotice.is_read && (newNotice.parent_id === selectedParent.id || newNotice.parent_id === null)) {
+            // Verificar estrictamente que el aviso pertenezca a la cuenta vinculada de esta tablet
+            const isForThisAccount = !linkedAccountId || linkedAccountId === 'default' || newNotice.account_id === linkedAccountId;
+            const isForThisMember = newNotice.parent_id === selectedParent.id || newNotice.parent_id === null;
+
+            if (isForThisAccount && isForThisMember && !newNotice.is_read) {
               speakMessage(`Nuevo aviso importante: ${newNotice.message}`);
+              loadParentData(selectedParent.id);
             }
+          } else {
+            loadParentData(selectedParent.id);
           }
-          loadParentData(selectedParent.id);
         }
       )
       .on(
@@ -378,12 +395,21 @@ export default function TabletDashboard() {
     const NOTICE_POLL_MS = 20 * 1000;
     const noticePollTimer = setInterval(async () => {
       try {
-        const { data: ntc, error: ntcError } = await supabase
+        let pollQuery = supabase
           .from('notices')
           .select('*')
-          .or(`parent_id.eq.${selectedParent.id},parent_id.is.null`)
           .eq('is_read', false)
           .order('created_at', { ascending: false });
+
+        if (linkedAccountId && linkedAccountId !== 'default') {
+          pollQuery = pollQuery
+            .eq('account_id', linkedAccountId)
+            .or(`parent_id.eq.${selectedParent.id},parent_id.is.null`);
+        } else {
+          pollQuery = pollQuery.eq('parent_id', selectedParent.id);
+        }
+
+        const { data: ntc, error: ntcError } = await pollQuery;
 
         if (!ntcError && ntc) {
           setNotices((current) => {
@@ -416,7 +442,7 @@ export default function TabletDashboard() {
       clearInterval(noticePollTimer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
-  }, [selectedParent, loadParentData, speakMessage]);
+  }, [selectedParent, loadParentData, linkedAccountId, speakMessage]);
 
   // 7. Sincronización automática de Google Calendar cada 5 horas (desde la tablet)
   useEffect(() => {
