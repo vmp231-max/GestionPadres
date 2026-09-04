@@ -973,6 +973,66 @@ function getAvatarGradient(name: string, index: number) {
           </button>
         </div>
 
+        {/* BOTONES DE SELECCIÓN DE MIEMBRO FAMILIAR (ARRIBA DEL TODO) */}
+        {parents.length === 0 ? (
+          <div className="glass-panel" style={{ padding: '36px', textAlign: 'center', maxWidth: '500px', width: '100%', marginBottom: '32px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
+            <AlertTriangle size={40} color="var(--color-warning)" style={{ margin: '0 auto' }} />
+            <h2 style={{ fontSize: '1.4rem', fontWeight: 700 }}>Sin familiares en {linkedAccountName || 'esta cuenta'}</h2>
+            <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.95rem', margin: 0 }}>
+              Esta tablet está conectada a la cuenta <strong>"{linkedAccountName || 'Cuenta Familiar'}"</strong>. Si deseas conectar con otra familia o volver a autenticarte, pulsa "Cambiar de Familia".
+            </p>
+            <div style={{ display: 'flex', gap: '10px', marginTop: '6px', flexWrap: 'wrap', justifyContent: 'center' }}>
+              <button onClick={handleUnlinkAccount} className="btn btn-secondary" style={{ padding: '8px 16px', fontSize: '0.9rem' }}>
+                🔄 Cambiar de Familia
+              </button>
+              <a href="/admin" className="btn btn-primary" style={{ padding: '8px 16px', fontSize: '0.9rem', textDecoration: 'none' }}>
+                ⚙️ Gestionar en /admin
+              </a>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: '28px', flexWrap: 'wrap', justifyContent: 'center', maxWidth: '1000px', width: '100%', marginBottom: '32px' }}>
+            {parents.map((parent, index) => (
+              <button
+                key={parent.id}
+                onClick={() => setSelectedParent(parent)}
+                className="glass-panel"
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '20px',
+                  width: '280px',
+                  padding: '36px 24px',
+                  cursor: 'pointer',
+                  borderRadius: 'var(--radius-xl)',
+                  border: '2px solid var(--glass-border)',
+                  outline: 'none',
+                  textDecoration: 'none',
+                  transition: 'transform 0.15s ease, border-color 0.15s ease'
+                }}
+              >
+                <div style={{
+                  width: '130px',
+                  height: '130px',
+                  borderRadius: '50%',
+                  background: getAvatarGradient(parent.name, index),
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
+                  color: 'white',
+                  fontSize: '3.8rem',
+                  fontWeight: 700
+                }}>
+                  {parent.name.charAt(0)}
+                </div>
+                <span style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>{parent.name}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* WIDGET METEOROLÓGICO ACCESIBLE PARA PERSONAS MAYORES */}
         <div className="glass-panel" style={{ width: '100%', maxWidth: '960px', padding: '20px 24px', marginBottom: '32px', display: 'flex', flexDirection: 'column', gap: '16px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.12)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
@@ -1209,6 +1269,28 @@ function getAvatarGradient(name: string, index: number) {
           </div>
         )}
 
+        {/* Botón inferior para Desvincular / Cambiar de Familia */}
+        <div style={{ display: 'flex', gap: '24px', marginTop: '10px', marginBottom: '20px', alignItems: 'center' }}>
+          <button
+            onClick={handleUnlinkAccount}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--color-text-muted)',
+              fontSize: '0.9rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '8px 14px',
+              borderRadius: 'var(--radius-sm)'
+            }}
+          >
+            <Lock size={15} />
+            <span>Desvincular / Cambiar de Familia</span>
+          </button>
+        </div>
+
         {/* MODAL PARA CAMBIAR CIUDAD / PUEBLO */}
         {showLocationModal && (
           <div style={{
@@ -1342,65 +1424,6 @@ function getAvatarGradient(name: string, index: number) {
               </div>
 
             </div>
-          </div>
-        )}
-
-        {parents.length === 0 ? (
-          <div className="glass-panel" style={{ padding: '36px', textAlign: 'center', maxWidth: '500px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
-            <AlertTriangle size={40} color="var(--color-warning)" style={{ margin: '0 auto' }} />
-            <h2 style={{ fontSize: '1.4rem', fontWeight: 700 }}>Sin familiares en {linkedAccountName || 'esta cuenta'}</h2>
-            <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.95rem', margin: 0 }}>
-              Esta tablet está conectada a la cuenta <strong>"{linkedAccountName || 'Cuenta Familiar'}"</strong>. Si deseas conectar con otra familia o volver a autenticarte, pulsa "Cambiar de Familia".
-            </p>
-            <div style={{ display: 'flex', gap: '10px', marginTop: '6px', flexWrap: 'wrap', justifyContent: 'center' }}>
-              <button onClick={handleUnlinkAccount} className="btn btn-secondary" style={{ padding: '8px 16px', fontSize: '0.9rem' }}>
-                🔄 Cambiar de Familia
-              </button>
-              <a href="/admin" className="btn btn-primary" style={{ padding: '8px 16px', fontSize: '0.9rem', textDecoration: 'none' }}>
-                ⚙️ Gestionar en /admin
-              </a>
-            </div>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', gap: '32px', flexWrap: 'wrap', justifyContent: 'center', maxWidth: '1000px', width: '100%' }}>
-            {parents.map((parent, index) => (
-              <button
-                key={parent.id}
-                onClick={() => setSelectedParent(parent)}
-                className="glass-panel"
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: '20px',
-                  width: '280px',
-                  padding: '36px 24px',
-                  cursor: 'pointer',
-                  borderRadius: 'var(--radius-xl)',
-                  border: '2px solid var(--glass-border)',
-                  outline: 'none',
-                  textDecoration: 'none',
-                  transition: 'transform 0.15s ease, border-color 0.15s ease'
-                }}
-              >
-                <div style={{
-                  width: '130px',
-                  height: '130px',
-                  borderRadius: '50%',
-                  background: getAvatarGradient(parent.name, index),
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 10px 25px rgba(0,0,0,0.3)',
-                  color: 'white',
-                  fontSize: '3.8rem',
-                  fontWeight: 700
-                }}>
-                  {parent.name.charAt(0)}
-                </div>
-                <span style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>{parent.name}</span>
-              </button>
-            ))}
           </div>
         )}
 
