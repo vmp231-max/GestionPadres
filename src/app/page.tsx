@@ -142,14 +142,22 @@ export default function TabletDashboard() {
   const [contacts, setContacts] = useState<EmergencyContact[]>([]);
   const [showContactsModal, setShowContactsModal] = useState<boolean>(false);
 
-  // Rotación automática de fotos cada 10 segundos
+  // Rotación automática de fotos de la familia en bucle cada 7 segundos
   useEffect(() => {
     if (photos.length <= 1) return;
+    const PHOTO_CYCLE_MS = 7000; // 7 segundos entre foto y foto
     const interval = setInterval(() => {
       setCurrentPhotoIndex((prev) => (prev + 1) % photos.length);
-    }, 10000);
+    }, PHOTO_CYCLE_MS);
     return () => clearInterval(interval);
   }, [photos.length]);
+
+  // Asegurar que el índice de foto siempre sea válido
+  useEffect(() => {
+    if (currentPhotoIndex >= photos.length && photos.length > 0) {
+      setCurrentPhotoIndex(0);
+    }
+  }, [photos.length, currentPhotoIndex]);
 
   // Limpiar cualquier residuo de clave global antigua
   useEffect(() => {
@@ -1188,10 +1196,17 @@ function getAvatarGradient(name: string, index: number) {
             {/* Imagen Principal del Carrusel */}
             <div style={{ position: 'relative', width: '100%', height: '340px', borderRadius: 'var(--radius-md)', overflow: 'hidden', background: '#090d16', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <img
+                key={photos[currentPhotoIndex]?.id || currentPhotoIndex}
                 src={photos[currentPhotoIndex]?.image_url}
                 alt={photos[currentPhotoIndex]?.caption || 'Foto familiar'}
                 onClick={() => setFullscreenPhoto(photos[currentPhotoIndex])}
-                style={{ width: '100%', height: '100%', objectFit: 'contain', cursor: 'pointer' }}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'contain',
+                  cursor: 'pointer',
+                  animation: 'photoFadeIn 0.6s ease-in-out'
+                }}
               />
 
               {/* Botones de navegación táctiles grandes */}
@@ -1215,7 +1230,8 @@ function getAvatarGradient(name: string, index: number) {
                       alignItems: 'center',
                       justifyContent: 'center',
                       cursor: 'pointer',
-                      boxShadow: '0 4px 10px rgba(0,0,0,0.4)'
+                      boxShadow: '0 4px 10px rgba(0,0,0,0.4)',
+                      zIndex: 5
                     }}
                     title="Foto anterior"
                   >
@@ -1239,13 +1255,50 @@ function getAvatarGradient(name: string, index: number) {
                       alignItems: 'center',
                       justifyContent: 'center',
                       cursor: 'pointer',
-                      boxShadow: '0 4px 10px rgba(0,0,0,0.4)'
+                      boxShadow: '0 4px 10px rgba(0,0,0,0.4)',
+                      zIndex: 5
                     }}
                     title="Foto siguiente"
                   >
                     <ChevronRight size={26} />
                   </button>
                 </>
+              )}
+
+              {/* Indicadores de puntos (dots) para ver el progreso del bucle */}
+              {photos.length > 1 && (
+                <div style={{
+                  position: 'absolute',
+                  top: '12px',
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  display: 'flex',
+                  gap: '6px',
+                  background: 'rgba(0,0,0,0.5)',
+                  padding: '4px 10px',
+                  borderRadius: '12px',
+                  backdropFilter: 'blur(4px)',
+                  zIndex: 5
+                }}>
+                  {photos.map((_, dotIdx) => (
+                    <button
+                      key={dotIdx}
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setCurrentPhotoIndex(dotIdx); }}
+                      style={{
+                        width: dotIdx === currentPhotoIndex ? '16px' : '8px',
+                        height: '8px',
+                        borderRadius: '4px',
+                        background: dotIdx === currentPhotoIndex ? '#ec4899' : 'rgba(255,255,255,0.4)',
+                        border: 'none',
+                        padding: 0,
+                        cursor: 'pointer',
+                        transition: 'all 0.3s ease'
+                      }}
+                      title={`Ir a foto ${dotIdx + 1}`}
+                    />
+                  ))}
+                </div>
               )}
 
               {/* Pie de Foto superpuesto */}
@@ -1260,7 +1313,8 @@ function getAvatarGradient(name: string, index: number) {
                   color: '#ffffff',
                   fontSize: '1.2rem',
                   fontWeight: 600,
-                  textAlign: 'center'
+                  textAlign: 'center',
+                  zIndex: 4
                 }}>
                   ❤️ {photos[currentPhotoIndex].caption}
                 </div>
@@ -1726,6 +1780,74 @@ function getAvatarGradient(name: string, index: number) {
               <X size={32} />
             </button>
 
+            {/* Flechas de navegación en pantalla completa */}
+            {photos.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const idx = photos.findIndex(p => p.id === fullscreenPhoto.id);
+                    const nextIdx = (idx - 1 + photos.length) % photos.length;
+                    setFullscreenPhoto(photos[nextIdx]);
+                    setCurrentPhotoIndex(nextIdx);
+                  }}
+                  style={{
+                    position: 'absolute',
+                    left: '20px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'rgba(0,0,0,0.6)',
+                    border: '1px solid rgba(255,255,255,0.3)',
+                    color: '#ffffff',
+                    borderRadius: '50%',
+                    width: '60px',
+                    height: '60px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    zIndex: 2600,
+                    boxShadow: '0 4px 15px rgba(0,0,0,0.5)'
+                  }}
+                  title="Foto anterior"
+                >
+                  <ChevronLeft size={36} />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const idx = photos.findIndex(p => p.id === fullscreenPhoto.id);
+                    const nextIdx = (idx + 1) % photos.length;
+                    setFullscreenPhoto(photos[nextIdx]);
+                    setCurrentPhotoIndex(nextIdx);
+                  }}
+                  style={{
+                    position: 'absolute',
+                    right: '20px',
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    background: 'rgba(0,0,0,0.6)',
+                    border: '1px solid rgba(255,255,255,0.3)',
+                    color: '#ffffff',
+                    borderRadius: '50%',
+                    width: '60px',
+                    height: '60px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    zIndex: 2600,
+                    boxShadow: '0 4px 15px rgba(0,0,0,0.5)'
+                  }}
+                  title="Foto siguiente"
+                >
+                  <ChevronRight size={36} />
+                </button>
+              </>
+            )}
+
             {/* Imagen a pantalla completa */}
             <div
               onClick={(e) => e.stopPropagation()}
@@ -1740,6 +1862,7 @@ function getAvatarGradient(name: string, index: number) {
               }}
             >
               <img
+                key={fullscreenPhoto.id}
                 src={fullscreenPhoto.image_url}
                 alt={fullscreenPhoto.caption || 'Foto familiar'}
                 style={{
@@ -1748,7 +1871,8 @@ function getAvatarGradient(name: string, index: number) {
                   objectFit: 'contain',
                   borderRadius: 'var(--radius-lg)',
                   boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8)',
-                  border: '2px solid rgba(255, 255, 255, 0.15)'
+                  border: '2px solid rgba(255, 255, 255, 0.15)',
+                  animation: 'photoFadeIn 0.4s ease-in-out'
                 }}
               />
 
@@ -2536,6 +2660,74 @@ function getAvatarGradient(name: string, index: number) {
             <X size={32} />
           </button>
 
+          {/* Flechas de navegación en pantalla completa */}
+          {photos.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const idx = photos.findIndex(p => p.id === fullscreenPhoto.id);
+                  const nextIdx = (idx - 1 + photos.length) % photos.length;
+                  setFullscreenPhoto(photos[nextIdx]);
+                  setCurrentPhotoIndex(nextIdx);
+                }}
+                style={{
+                  position: 'absolute',
+                  left: '20px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'rgba(0,0,0,0.6)',
+                  border: '1px solid rgba(255,255,255,0.3)',
+                  color: '#ffffff',
+                  borderRadius: '50%',
+                  width: '60px',
+                  height: '60px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  zIndex: 2600,
+                  boxShadow: '0 4px 15px rgba(0,0,0,0.5)'
+                }}
+                title="Foto anterior"
+              >
+                <ChevronLeft size={36} />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const idx = photos.findIndex(p => p.id === fullscreenPhoto.id);
+                  const nextIdx = (idx + 1) % photos.length;
+                  setFullscreenPhoto(photos[nextIdx]);
+                  setCurrentPhotoIndex(nextIdx);
+                }}
+                style={{
+                  position: 'absolute',
+                  right: '20px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'rgba(0,0,0,0.6)',
+                  border: '1px solid rgba(255,255,255,0.3)',
+                  color: '#ffffff',
+                  borderRadius: '50%',
+                  width: '60px',
+                  height: '60px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  zIndex: 2600,
+                  boxShadow: '0 4px 15px rgba(0,0,0,0.5)'
+                }}
+                title="Foto siguiente"
+              >
+                <ChevronRight size={36} />
+              </button>
+            </>
+          )}
+
           {/* Imagen a pantalla completa */}
           <div
             onClick={(e) => e.stopPropagation()}
@@ -2550,6 +2742,7 @@ function getAvatarGradient(name: string, index: number) {
             }}
           >
             <img
+              key={fullscreenPhoto.id}
               src={fullscreenPhoto.image_url}
               alt={fullscreenPhoto.caption || 'Foto familiar'}
               style={{
@@ -2558,7 +2751,8 @@ function getAvatarGradient(name: string, index: number) {
                 objectFit: 'contain',
                 borderRadius: 'var(--radius-lg)',
                 boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8)',
-                border: '2px solid rgba(255, 255, 255, 0.15)'
+                border: '2px solid rgba(255, 255, 255, 0.15)',
+                animation: 'photoFadeIn 0.4s ease-in-out'
               }}
             />
 
@@ -2586,6 +2780,10 @@ function getAvatarGradient(name: string, index: number) {
         @keyframes pulse-notice {
           0%, 100% { transform: scale(1); }
           50% { transform: scale(1.01); }
+        }
+        @keyframes photoFadeIn {
+          from { opacity: 0.35; transform: scale(0.99); }
+          to { opacity: 1; transform: scale(1); }
         }
       `}</style>
     </main>
