@@ -104,6 +104,11 @@ interface Notice {
   is_read: boolean;
 }
 
+const getTabletToken = () => {
+  if (typeof window === 'undefined') return '';
+  return localStorage.getItem('tablet_session_token') || '';
+};
+
 export default function TabletDashboard() {
   const [selectedParent, setSelectedParent] = useState<Parent | null>(null);
   const [parents, setParents] = useState<Parent[]>([]);
@@ -204,15 +209,23 @@ export default function TabletDashboard() {
     setLocationSearchResults([]);
     loadWeatherData(loc);
 
-    // Guardar en la base de datos para la cuenta vinculada (persistencia multi-dispositivo)
-    if (linkedAccountId && linkedAccountId !== 'default') {
+    // Guardar en la base de datos para la cuenta vinculada a través de la API segura
+    const token = getTabletToken();
+    if (token && linkedAccountId && linkedAccountId !== 'default') {
       try {
-        await supabase
-          .from('accounts')
-          .update({ weather_location: loc })
-          .eq('id', linkedAccountId);
+        await fetch('/api/tablet/actions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-tablet-token': token,
+          },
+          body: JSON.stringify({
+            action: 'update_weather_location',
+            location: loc,
+          }),
+        });
       } catch (err) {
-        console.error('Error al persistir ubicación meteorológica en Supabase:', err);
+        console.error('Error al persistir ubicación meteorológica en el servidor:', err);
       }
     }
   };
@@ -370,57 +383,33 @@ export default function TabletDashboard() {
     setWeatherData(null);
   };
 
-  // 1. Cargar familiares y sincronizar configuración de la cuenta vinculada
+  // 1. Cargar familiares y sincronizar configuración de la cuenta vinculada (Vía API Segura HMAC)
   const loadParents = useCallback(async () => {
     if (!linkedAccountId) {
       setParents([]);
       return;
     }
+    const token = getTabletToken();
+    if (!token) return;
+
     try {
       setLoading(true);
-      
-      // Consultar ubicación guardada en la base de datos exclusivamente para esta cuenta
-      if (linkedAccountId !== 'default') {
-        const { data: accData } = await supabase
-          .from('accounts')
-          .select('weather_location')
-          .eq('id', linkedAccountId)
-          .maybeSingle();
+      const res = await fetch('/api/tablet/data', {
+        headers: { 'x-tablet-token': token },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al cargar datos familiares');
 
-        if (accData?.weather_location) {
-          setWeatherLocation(accData.weather_location);
-          try {
-            localStorage.setItem(`tablet_weather_location_${linkedAccountId}`, JSON.stringify(accData.weather_location));
-          } catch (e) {}
-        }
-
-        // Cargar fotos familiares
-        const { data: photosData } = await supabase
-          .from('family_photos')
-          .select('*')
-          .eq('account_id', linkedAccountId)
-          .order('created_at', { ascending: false });
-        setPhotos(photosData || []);
-
-        // Cargar contactos familiares y emergencias
-        const { data: contactsData } = await supabase
-          .from('emergency_contacts')
-          .select('*')
-          .eq('account_id', linkedAccountId)
-          .order('is_emergency', { ascending: false })
-          .order('order_num', { ascending: true })
-          .order('created_at', { ascending: true });
-        setContacts(contactsData || []);
+      if (data.account?.weather_location) {
+        setWeatherLocation(data.account.weather_location);
+        try {
+          localStorage.setItem(`tablet_weather_location_${linkedAccountId}`, JSON.stringify(data.account.weather_location));
+        } catch (e) {}
       }
 
-      let query = supabase.from('parents').select('*').order('name', { ascending: true });
-      if (linkedAccountId !== 'default') {
-        query = query.eq('account_id', linkedAccountId);
-      }
-      const { data, error } = await query;
-
-      if (error) throw error;
-      setParents(data || []);
+      setPhotos(data.photos || []);
+      setContacts(data.contacts || []);
+      setParents(data.parents || []);
     } catch (err) {
       console.error('Error al cargar datos familiares:', err);
     } finally {
@@ -520,59 +509,25 @@ export default function TabletDashboard() {
     }
   }, []);
 
-  // 5. Cargar datos específicos de un padre (Citas, Medicamentos, Avisos)
+  // 5. Cargar datos específicos de un padre (Citas, Medicamentos, Avisos Vía API Segura HMAC)
   const loadParentData = useCallback(async (parentId: string) => {
+    const token = getTabletToken();
+    if (!token) return;
+
     try {
-      // Mostrar citas desde el inicio del día actual (00:00) para que no desaparezcan las de hoy
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
+      const res = await fetch(`/api/tablet/data?parentId=${encodeURIComponent(parentId)}`, {
+        headers: { 'x-tablet-token': token },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Error al cargar datos del familiar');
 
-      // Citas médicas (de hoy en adelante)
-      const { data: appts, error: apptsError } = await supabase
-        .from('appointments')
-        .select('*')
-        .eq('parent_id', parentId)
-        .gte('end_time', todayStart.toISOString())
-        .order('start_time', { ascending: true });
-
-      if (apptsError) throw apptsError;
-      setAppointments(appts || []);
-
-      // Medicación activa
-      const { data: meds, error: medsError } = await supabase
-        .from('medications')
-        .select('*')
-        .eq('parent_id', parentId)
-        .eq('active', true);
-
-      if (medsError) throw medsError;
-      setMedications(meds || []);
-
-      // Avisos no leídos pertenecientes EXCLUSIVAMENTE a esta cuenta familiar
-      // (específicos de este familiar o para toda la familia 'parent_id IS NULL')
-      let ntcQuery = supabase
-        .from('notices')
-        .select('*')
-        .eq('is_read', false)
-        .order('created_at', { ascending: false });
-
-      if (linkedAccountId && linkedAccountId !== 'default') {
-        ntcQuery = ntcQuery
-          .eq('account_id', linkedAccountId)
-          .or(`parent_id.eq.${parentId},parent_id.is.null`);
-      } else {
-        ntcQuery = ntcQuery.eq('parent_id', parentId);
-      }
-
-      const { data: ntc, error: ntcError } = await ntcQuery;
-
-      if (ntcError) throw ntcError;
-      setNotices(ntc || []);
-
+      setAppointments(data.appointments || []);
+      setMedications(data.medications || []);
+      setNotices(data.notices || []);
     } catch (err) {
       console.error('Error al cargar datos del dashboard:', err);
     }
-  }, [linkedAccountId]);
+  }, []);
 
   useEffect(() => {
     if (!selectedParent) return;
@@ -631,39 +586,9 @@ export default function TabletDashboard() {
     }, HOURLY_REFRESH_MS);
 
     // Sondeo de respaldo para avisos cada 20 segundos
-    const NOTICE_POLL_MS = 20 * 1000;
-    const noticePollTimer = setInterval(async () => {
-      try {
-        let pollQuery = supabase
-          .from('notices')
-          .select('*')
-          .eq('is_read', false)
-          .order('created_at', { ascending: false });
-
-        if (linkedAccountId && linkedAccountId !== 'default') {
-          pollQuery = pollQuery
-            .eq('account_id', linkedAccountId)
-            .or(`parent_id.eq.${selectedParent.id},parent_id.is.null`);
-        } else {
-          pollQuery = pollQuery.eq('parent_id', selectedParent.id);
-        }
-
-        const { data: ntc, error: ntcError } = await pollQuery;
-
-        if (!ntcError && ntc) {
-          setNotices((current) => {
-            const currentIds = new Set(current.map(n => n.id));
-            const newOnes = ntc.filter(n => !currentIds.has(n.id));
-            if (newOnes.length > 0) {
-              console.log('[Avisos Poll] Nuevo aviso detectado:', newOnes[0]);
-              speakMessage(`Nuevo aviso: ${newOnes[0].message}`);
-            }
-            return ntc;
-          });
-        }
-      } catch (err) {
-        console.error('[Avisos Poll] Error en sondeo de respaldo:', err);
-      }
+    const NOTICE_POLL_MS = 30 * 1000;
+    const noticePollTimer = setInterval(() => {
+      loadParentData(selectedParent.id);
     }, NOTICE_POLL_MS);
 
     // Refrescar inmediatamente cuando la tablet se active o vuelva a estar visible
@@ -731,25 +656,33 @@ export default function TabletDashboard() {
     };
   }, [selectedParent, loadParentData]);
 
-  // 8. Confirmar lectura de aviso
+  // 8. Confirmar lectura de aviso (Vía API Segura HMAC)
   const acknowledgeNotice = async (noticeId: string) => {
-    try {
-      const { error } = await supabase
-        .from('notices')
-        .update({ is_read: true, read_at: new Date().toISOString() })
-        .eq('id', noticeId);
+    // Remover de inmediato en la interfaz para máxima reactividad táctil
+    setNotices(prev => prev.filter(n => n.id !== noticeId));
+    
+    // Detener lectura de voz si el usuario pulsa confirmar
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
 
-      if (error) throw error;
-      
-      // Remover localmente
-      setNotices(prev => prev.filter(n => n.id !== noticeId));
-      
-      // Detener lectura de voz si el usuario pulsa confirmar
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
+    const token = getTabletToken();
+    if (!token) return;
+
+    try {
+      await fetch('/api/tablet/actions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-tablet-token': token,
+        },
+        body: JSON.stringify({
+          action: 'mark_notice_read',
+          noticeId,
+        }),
+      });
     } catch (err) {
-      console.error('Error al confirmar aviso:', err);
+      console.error('Error al confirmar aviso en servidor:', err);
     }
   };
 

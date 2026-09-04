@@ -56,10 +56,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Verificar tipo de archivo
+    // Verificar tipo y tamaño del archivo
     if (file.type !== 'application/pdf' && !file.name.endsWith('.pdf')) {
       return NextResponse.json(
         { error: 'El archivo debe ser un documento PDF.' },
+        { status: 400 }
+      );
+    }
+
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
+    if (file.size === 0) {
+      return NextResponse.json(
+        { error: 'El archivo PDF está vacío.' },
+        { status: 400 }
+      );
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: 'El archivo PDF supera el tamaño máximo permitido de 10 MB.' },
         { status: 400 }
       );
     }

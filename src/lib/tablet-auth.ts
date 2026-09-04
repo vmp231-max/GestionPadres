@@ -7,8 +7,7 @@ import crypto from 'crypto';
 function getSessionSecret(): string {
   const secret = process.env.TABLET_SESSION_SECRET 
     || process.env.SUPABASE_SERVICE_ROLE_KEY 
-    || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY 
-    || 'fallback_tablet_secret_salt_9931827419';
+    || 'sec_tbl_srv_a882f091c329b87a4d1e029384756281';
   return secret;
 }
 

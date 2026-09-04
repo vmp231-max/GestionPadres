@@ -153,11 +153,6 @@ create policy "Admin: gestión de familiares" on public.parents
     using (account_id in (select id from public.accounts where user_id = auth.uid()))
     with check (account_id in (select id from public.accounts where user_id = auth.uid()));
 
--- Tablet (Anon): lectura de perfiles familiares
-create policy "Tablet: consultar familiares" on public.parents
-    for select to anon
-    using (true);
-
 -- POLÍTICAS PARA MEDICATIONS
 -- Administradores: gestión completa de medicación de sus familiares
 create policy "Admin: gestión de medicaciones" on public.medications
@@ -172,11 +167,6 @@ create policy "Admin: gestión de medicaciones" on public.medications
         join public.accounts a on p.account_id = a.id
         where a.user_id = auth.uid()
     ));
-
--- Tablet (Anon): lectura de medicación para el dashboard de la tablet
-create policy "Tablet: consultar medicación" on public.medications
-    for select to anon
-    using (true);
 
 -- POLÍTICAS PARA APPOINTMENTS
 -- Administradores: gestión de citas médicas de sus familiares
@@ -193,27 +183,12 @@ create policy "Admin: gestión de citas" on public.appointments
         where a.user_id = auth.uid()
     ));
 
--- Tablet (Anon): lectura de citas
-create policy "Tablet: consultar citas" on public.appointments
-    for select to anon
-    using (true);
-
 -- POLÍTICAS PARA NOTICES
 -- Administradores: gestión completa de avisos para su familia
 create policy "Admin: gestión de avisos" on public.notices
     for all to authenticated
     using (account_id in (select id from public.accounts where user_id = auth.uid()))
     with check (account_id in (select id from public.accounts where user_id = auth.uid()));
-
--- Tablet (Anon): lectura de avisos y confirmación de lectura
-create policy "Tablet: consultar avisos" on public.notices
-    for select to anon
-    using (true);
-
-create policy "Tablet: confirmar lectura de avisos" on public.notices
-    for update to anon
-    using (true)
-    with check (true);
 
 -- POLÍTICAS PARA FAMILY_PHOTOS
 -- Administradores: gestión de fotos familiares
@@ -222,22 +197,12 @@ create policy "Admin: gestión de fotos familiares" on public.family_photos
     using (account_id in (select id from public.accounts where user_id = auth.uid()))
     with check (account_id in (select id from public.accounts where user_id = auth.uid()));
 
--- Tablet (Anon): ver fotos del carrusel familiar
-create policy "Tablet: consultar fotos familiares" on public.family_photos
-    for select to anon
-    using (true);
-
 -- POLÍTICAS PARA EMERGENCY_CONTACTS
 -- Administradores: gestión de contactos de emergencia
 create policy "Admin: gestión de contactos de emergencia" on public.emergency_contacts
     for all to authenticated
     using (account_id in (select id from public.accounts where user_id = auth.uid()))
     with check (account_id in (select id from public.accounts where user_id = auth.uid()));
-
--- Tablet (Anon): ver contactos de emergencia y llamar
-create policy "Tablet: consultar contactos de emergencia" on public.emergency_contacts
-    for select to anon
-    using (true);
 
 -- 9. Habilitar Supabase Realtime para sincronización en tiempo real
 alter publication supabase_realtime add table public.notices;
