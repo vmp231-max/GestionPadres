@@ -1250,7 +1250,8 @@ function getAvatarGradient(name: string, index: number) {
                         boxShadow: '0 4px 10px rgba(16, 185, 129, 0.4)'
                       }}
                     >
-                      <span>Entendido, hijo</span>
+                      <Check size={20} style={{ marginRight: '8px' }} />
+                      <span>Entendido</span>
                     </button>
                   </div>
                 </div>
