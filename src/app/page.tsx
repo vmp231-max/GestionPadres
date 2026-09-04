@@ -19,13 +19,25 @@ import {
   ChevronUp,
   Lock,
   Delete,
-  Activity
+  Activity,
+  Sun,
+  CloudRain,
+  Search,
+  Compass,
+  X
 } from 'lucide-react';
 import { 
   isScheduledForToday, 
   isPrnMedication, 
   getScheduleDescription 
 } from '@/lib/medication-schedule';
+import {
+  WeatherLocation,
+  WeatherData,
+  POPULAR_LOCATIONS,
+  fetchWeather,
+  searchLocations
+} from '@/lib/weather';
 
 interface Parent {
   id: string;
@@ -83,6 +95,76 @@ export default function TabletDashboard() {
   const [isVerifyingPin, setIsVerifyingPin] = useState<boolean>(false);
   const [linkedAccountId, setLinkedAccountId] = useState<string | null>(null);
   const [linkedAccountName, setLinkedAccountName] = useState<string>('');
+
+  // Estado de Meteorología para personas mayores
+  const [weatherLocation, setWeatherLocation] = useState<WeatherLocation>(POPULAR_LOCATIONS[0]);
+  const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
+  const [weatherLoading, setWeatherLoading] = useState<boolean>(false);
+  const [showLocationModal, setShowLocationModal] = useState<boolean>(false);
+  const [locationSearchInput, setLocationSearchInput] = useState<string>('');
+  const [locationSearchResults, setLocationSearchResults] = useState<WeatherLocation[]>([]);
+  const [isSearchingLocation, setIsSearchingLocation] = useState<boolean>(false);
+  const [showForecastDetails, setShowForecastDetails] = useState<boolean>(false);
+
+  // Cargar ubicación guardada en localStorage al inicio
+  useEffect(() => {
+    try {
+      const savedLoc = localStorage.getItem('tablet_weather_location');
+      if (savedLoc) {
+        setWeatherLocation(JSON.parse(savedLoc));
+      }
+    } catch (e) {
+      console.error('Error al leer ubicación del tiempo:', e);
+    }
+  }, []);
+
+  // Consultar el tiempo cuando cambia la ubicación o al autenticarse
+  const loadWeatherData = useCallback(async (loc: WeatherLocation) => {
+    try {
+      setWeatherLoading(true);
+      const data = await fetchWeather(loc);
+      setWeatherData(data);
+    } catch (err) {
+      console.error('Error al consultar el tiempo:', err);
+    } finally {
+      setWeatherLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadWeatherData(weatherLocation);
+      const timer = setInterval(() => {
+        loadWeatherData(weatherLocation);
+      }, 30 * 60 * 1000); // Cada 30 minutos
+      return () => clearInterval(timer);
+    }
+  }, [isAuthenticated, weatherLocation, loadWeatherData]);
+
+  const handleSelectLocation = (loc: WeatherLocation) => {
+    setWeatherLocation(loc);
+    try {
+      localStorage.setItem('tablet_weather_location', JSON.stringify(loc));
+    } catch (e) {}
+    setShowLocationModal(false);
+    setLocationSearchInput('');
+    setLocationSearchResults([]);
+    loadWeatherData(loc);
+  };
+
+  const handleSearchLocation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!locationSearchInput.trim()) return;
+    setIsSearchingLocation(true);
+    try {
+      const results = await searchLocations(locationSearchInput.trim());
+      setLocationSearchResults(results);
+    } catch (err) {
+      console.error('Error buscando ubicación:', err);
+    } finally {
+      setIsSearchingLocation(false);
+    }
+  };
 
   // 0. Comprobar sesión de acceso persistente de la tablet
   useEffect(() => {
@@ -724,15 +806,278 @@ function getAvatarGradient(name: string, index: number) {
           <div className="blob blob-2"></div>
         </div>
 
-        <div style={{ textAlign: 'center', marginBottom: '40px' }}>
+        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
           <span style={{ fontSize: '1.1rem', color: 'var(--color-info)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             {linkedAccountName ? `Cuenta: ${linkedAccountName}` : 'Portal Médico Familiar'}
           </span>
-          <h1 style={{ fontSize: '2.8rem', fontWeight: 800, marginTop: '6px' }}>¿Quién eres?</h1>
-          <p style={{ fontSize: '1.3rem', color: 'var(--color-text-secondary)', marginTop: '8px' }}>
+          <h1 style={{ fontSize: '2.8rem', fontWeight: 800, marginTop: '4px' }}>¿Quién eres?</h1>
+          <p style={{ fontSize: '1.25rem', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
             Selecciona tu perfil para ver tu medicación y citas de hoy
           </p>
         </div>
+
+        {/* WIDGET METEOROLÓGICO ACCESIBLE PARA PERSONAS MAYORES */}
+        <div className="glass-panel" style={{ width: '100%', maxWidth: '960px', padding: '20px 24px', marginBottom: '32px', display: 'flex', flexDirection: 'column', gap: '16px', background: 'rgba(255, 255, 255, 0.03)', border: '1px solid rgba(255, 255, 255, 0.12)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px' }}>
+            
+            {/* Lado izquierdo: Icono gigante, temperatura y estado */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+              <span style={{ fontSize: '3.5rem', lineHeight: 1, filter: 'drop-shadow(0 4px 10px rgba(0,0,0,0.3))' }}>
+                {weatherData ? weatherData.icon : '☀️'}
+              </span>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
+                  <span style={{ fontSize: '3rem', fontWeight: 800, color: 'var(--color-text-primary)' }}>
+                    {weatherData ? `${weatherData.currentTemp}°` : '--°'}
+                  </span>
+                  <span style={{ fontSize: '1.3rem', fontWeight: 600, color: 'var(--color-text-secondary)' }}>
+                    {weatherData ? weatherData.conditionText : 'Consultando el tiempo...'}
+                  </span>
+                </div>
+                {weatherData && (
+                  <div style={{ display: 'flex', gap: '12px', fontSize: '1rem', color: 'var(--color-text-muted)', marginTop: '2px' }}>
+                    <span>🌡️ Máx: <strong style={{ color: '#f87171' }}>{weatherData.tempMax}°</strong> / Mín: <strong style={{ color: '#60a5fa' }}>{weatherData.tempMin}°</strong></span>
+                    {weatherData.rainProb > 0 && (
+                      <span>🌧️ Lluvia: <strong style={{ color: '#38bdf8' }}>{weatherData.rainProb}%</strong></span>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Lado derecho: Selector de ciudad y botón de previsión */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+              <button
+                type="button"
+                onClick={() => setShowLocationModal(true)}
+                className="btn btn-secondary"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '8px 16px',
+                  fontSize: '1.05rem',
+                  fontWeight: 700,
+                  borderRadius: 'var(--radius-md)',
+                  background: 'rgba(6, 182, 212, 0.12)',
+                  color: 'var(--color-info)',
+                  border: '1px solid rgba(6, 182, 212, 0.3)'
+                }}
+              >
+                <MapPin size={18} />
+                <span>📍 {weatherLocation.name}</span>
+                <span style={{ fontSize: '0.85rem', opacity: 0.8 }}>(Cambiar)</span>
+              </button>
+
+              {weatherData?.forecast && weatherData.forecast.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setShowForecastDetails(!showForecastDetails)}
+                  style={{
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--color-text-secondary)',
+                    fontSize: '0.9rem',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '4px'
+                  }}
+                >
+                  <Calendar size={14} />
+                  <span>{showForecastDetails ? 'Ocultar previsión ▲' : 'Ver próximos días ▼'}</span>
+                </button>
+              )}
+            </div>
+
+          </div>
+
+          {/* Consejo amigable y claro para personas mayores */}
+          {weatherData?.seniorTip && (
+            <div style={{
+              background: 'rgba(59, 130, 246, 0.08)',
+              border: '1px solid rgba(59, 130, 246, 0.25)',
+              borderRadius: 'var(--radius-sm)',
+              padding: '10px 16px',
+              fontSize: '1.05rem',
+              fontWeight: 500,
+              color: '#93c5fd',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px'
+            }}>
+              <span>💡</span>
+              <span>{weatherData.seniorTip}</span>
+            </div>
+          )}
+
+          {/* Previsión a 3 días desplegable */}
+          {showForecastDetails && weatherData?.forecast && (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: '12px',
+              borderTop: '1px solid var(--glass-border)',
+              paddingTop: '14px',
+              marginTop: '4px'
+            }}>
+              {weatherData.forecast.map((day, idx) => (
+                <div key={day.date} className="glass-card" style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', textAlign: 'center', background: idx === 0 ? 'rgba(6, 182, 212, 0.06)' : 'rgba(255,255,255,0.02)' }}>
+                  <span style={{ fontSize: '1rem', fontWeight: 700, color: idx === 0 ? 'var(--color-info)' : 'var(--color-text-primary)' }}>
+                    {day.dayName}
+                  </span>
+                  <span style={{ fontSize: '2.4rem', lineHeight: 1, margin: '4px 0' }}>{day.icon}</span>
+                  <span style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)', lineHeight: 1.2 }}>{day.conditionText}</span>
+                  <div style={{ display: 'flex', gap: '8px', fontSize: '0.95rem', marginTop: '4px' }}>
+                    <span style={{ color: '#f87171', fontWeight: 700 }}>{day.tempMax}°</span>
+                    <span style={{ color: 'var(--color-text-muted)' }}>/</span>
+                    <span style={{ color: '#60a5fa', fontWeight: 700 }}>{day.tempMin}°</span>
+                  </div>
+                  {day.rainProb > 0 && (
+                    <span style={{ fontSize: '0.8rem', color: '#38bdf8' }}>🌧️ {day.rainProb}% lluvia</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* MODAL PARA CAMBIAR CIUDAD / PUEBLO */}
+        {showLocationModal && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.8)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '20px'
+          }}>
+            <div className="glass-panel" style={{ width: '100%', maxWidth: '640px', maxHeight: '90vh', overflowY: 'auto', padding: '28px', display: 'flex', flexDirection: 'column', gap: '20px', background: '#0b1329', border: '1px solid var(--color-info)', borderRadius: 'var(--radius-lg)' }}>
+              
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <MapPin size={24} color="var(--color-info)" />
+                  <h2 style={{ fontSize: '1.4rem', fontWeight: 700 }}>Elige tu pueblo o ciudad</h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowLocationModal(false)}
+                  style={{ background: 'transparent', border: 'none', color: 'var(--color-text-muted)', cursor: 'pointer', padding: '4px' }}
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              {/* Formulario de Búsqueda */}
+              <form onSubmit={handleSearchLocation} style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ position: 'relative', flex: 1 }}>
+                  <input
+                    type="text"
+                    value={locationSearchInput}
+                    onChange={(e) => setLocationSearchInput(e.target.value)}
+                    placeholder="Escribe el nombre de tu pueblo o ciudad..."
+                    style={{
+                      width: '100%',
+                      padding: '12px 16px',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid var(--glass-border)',
+                      borderRadius: 'var(--radius-md)',
+                      color: '#ffffff',
+                      fontSize: '1rem',
+                      outline: 'none'
+                    }}
+                    autoFocus
+                  />
+                </div>
+                <button type="submit" disabled={isSearchingLocation} className="btn btn-primary" style={{ padding: '0 20px', fontSize: '1rem', fontWeight: 700 }}>
+                  <Search size={18} />
+                  <span>{isSearchingLocation ? 'Buscando...' : 'Buscar'}</span>
+                </button>
+              </form>
+
+              {/* Resultados de Búsqueda */}
+              {locationSearchResults.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--color-info)', fontWeight: 600 }}>Resultados encontrados:</span>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '160px', overflowY: 'auto' }}>
+                    {locationSearchResults.map((loc, i) => (
+                      <button
+                        key={`${loc.name}-${loc.latitude}-${i}`}
+                        type="button"
+                        onClick={() => handleSelectLocation(loc)}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '10px 14px',
+                          background: 'rgba(255,255,255,0.04)',
+                          border: '1px solid var(--glass-border)',
+                          borderRadius: 'var(--radius-sm)',
+                          color: '#ffffff',
+                          cursor: 'pointer',
+                          textAlign: 'left'
+                        }}
+                      >
+                        <strong style={{ fontSize: '1rem' }}>{loc.name}</strong>
+                        <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)' }}>{loc.admin1} ({loc.country})</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Ciudades habituales */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <span style={{ fontSize: '0.9rem', color: 'var(--color-text-secondary)', fontWeight: 600 }}>O selecciona una de las ciudades habituales:</span>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: '8px' }}>
+                  {POPULAR_LOCATIONS.map((loc) => {
+                    const isSelected = weatherLocation.name.toLowerCase() === loc.name.toLowerCase();
+                    return (
+                      <button
+                        key={loc.name}
+                        type="button"
+                        onClick={() => handleSelectLocation(loc)}
+                        style={{
+                          padding: '10px 12px',
+                          borderRadius: 'var(--radius-sm)',
+                          background: isSelected ? 'rgba(6, 182, 212, 0.25)' : 'rgba(255, 255, 255, 0.03)',
+                          border: isSelected ? '2px solid var(--color-info)' : '1px solid var(--glass-border)',
+                          color: isSelected ? 'var(--color-info)' : 'var(--color-text-primary)',
+                          fontWeight: isSelected ? 700 : 500,
+                          cursor: 'pointer',
+                          fontSize: '0.95rem',
+                          textAlign: 'center',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        {loc.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowLocationModal(false)}
+                  className="btn btn-secondary"
+                  style={{ padding: '8px 20px', fontSize: '0.95rem' }}
+                >
+                  Cerrar
+                </button>
+              </div>
+
+            </div>
+          </div>
+        )}
 
         {parents.length === 0 ? (
           <div className="glass-panel" style={{ padding: '36px', textAlign: 'center', maxWidth: '500px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '14px' }}>
