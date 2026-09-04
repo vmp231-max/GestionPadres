@@ -141,15 +141,30 @@ export default function TabletDashboard() {
     }
   }, [isAuthenticated, weatherLocation, loadWeatherData]);
 
-  const handleSelectLocation = (loc: WeatherLocation) => {
+  const handleSelectLocation = async (loc: WeatherLocation) => {
     setWeatherLocation(loc);
     try {
       localStorage.setItem('tablet_weather_location', JSON.stringify(loc));
+      if (linkedAccountId) {
+        localStorage.setItem(`tablet_weather_location_${linkedAccountId}`, JSON.stringify(loc));
+      }
     } catch (e) {}
     setShowLocationModal(false);
     setLocationSearchInput('');
     setLocationSearchResults([]);
     loadWeatherData(loc);
+
+    // Guardar en la base de datos para la cuenta vinculada (persistencia multi-dispositivo)
+    if (linkedAccountId && linkedAccountId !== 'default') {
+      try {
+        await supabase
+          .from('accounts')
+          .update({ weather_location: loc })
+          .eq('id', linkedAccountId);
+      } catch (err) {
+        console.error('Error al persistir ubicación meteorológica en Supabase:', err);
+      }
+    }
   };
 
   const handleSearchLocation = async (e: React.FormEvent) => {
@@ -178,8 +193,19 @@ export default function TabletDashboard() {
         const expiresAt = parseInt(parts[0], 10);
         if (!isNaN(expiresAt) && Date.now() < expiresAt) {
           setIsAuthenticated(true);
-          setLinkedAccountId(accId || (parts.length > 2 ? parts[1] : null));
+          const currentAccId = accId || (parts.length > 2 ? parts[1] : null);
+          setLinkedAccountId(currentAccId);
           setLinkedAccountName(accName);
+
+          // Cargar ubicación meteorológica guardada para esta cuenta
+          if (currentAccId) {
+            const savedAccLoc = localStorage.getItem(`tablet_weather_location_${currentAccId}`) || localStorage.getItem('tablet_weather_location');
+            if (savedAccLoc) {
+              try {
+                setWeatherLocation(JSON.parse(savedAccLoc));
+              } catch (e) {}
+            }
+          }
         } else {
           localStorage.removeItem('tablet_session_token');
           localStorage.removeItem('tablet_account_id');
@@ -221,6 +247,16 @@ export default function TabletDashboard() {
         localStorage.setItem('tablet_account_name', data.account.name);
         setLinkedAccountId(data.account.id);
         setLinkedAccountName(data.account.name);
+
+        // Si la familia tiene una ciudad/ubicación guardada en la BD, aplicarla de inmediato
+        if (data.account.weather_location) {
+          setWeatherLocation(data.account.weather_location);
+          try {
+            localStorage.setItem(`tablet_weather_location_${data.account.id}`, JSON.stringify(data.account.weather_location));
+            localStorage.setItem('tablet_weather_location', JSON.stringify(data.account.weather_location));
+          } catch (e) {}
+          loadWeatherData(data.account.weather_location);
+        }
       }
       setIsAuthenticated(true);
       setInputPin('');
@@ -248,7 +284,7 @@ export default function TabletDashboard() {
     setInputPin('');
   };
 
-  // 1. Cargar familiares pertenecientes exclusivamente a esta cuenta
+  // 1. Cargar familiares y configuración de la cuenta vinculada
   const loadParents = useCallback(async () => {
     if (!linkedAccountId) {
       setParents([]);
@@ -256,6 +292,24 @@ export default function TabletDashboard() {
     }
     try {
       setLoading(true);
+      
+      // Consultar ubicación guardada en la base de datos para esta cuenta
+      if (linkedAccountId !== 'default') {
+        const { data: accData } = await supabase
+          .from('accounts')
+          .select('weather_location')
+          .eq('id', linkedAccountId)
+          .maybeSingle();
+
+        if (accData?.weather_location) {
+          setWeatherLocation(accData.weather_location);
+          try {
+            localStorage.setItem(`tablet_weather_location_${linkedAccountId}`, JSON.stringify(accData.weather_location));
+            localStorage.setItem('tablet_weather_location', JSON.stringify(accData.weather_location));
+          } catch (e) {}
+        }
+      }
+
       let query = supabase.from('parents').select('*').order('name', { ascending: true });
       if (linkedAccountId !== 'default') {
         query = query.eq('account_id', linkedAccountId);

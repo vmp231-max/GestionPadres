@@ -9,6 +9,7 @@ create table if not exists public.accounts (
     user_id uuid references auth.users(id) on delete cascade unique,
     name text not null default 'Mi Familia',
     tablet_pin text not null unique, -- Cada familia tiene un PIN único e irrepetible para inferir su perfil
+    weather_location jsonb, -- Ubicación meteorológica guardada para esta familia
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 

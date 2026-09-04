@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     // Buscar directamente la familia correspondiente al PIN único introducido
     const { data: account, error } = await supabase
       .from('accounts')
-      .select('id, name, tablet_pin')
+      .select('id, name, tablet_pin, weather_location')
       .eq('tablet_pin', pin)
       .maybeSingle();
 
@@ -67,7 +67,8 @@ export async function POST(req: NextRequest) {
       sessionDays: SESSION_DAYS,
       account: {
         id: account.id,
-        name: account.name
+        name: account.name,
+        weather_location: account.weather_location || null
       }
     });
   } catch (error: any) {
