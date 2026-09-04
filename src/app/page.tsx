@@ -96,7 +96,7 @@ export default function TabletDashboard() {
   const [linkedAccountId, setLinkedAccountId] = useState<string | null>(null);
   const [linkedAccountName, setLinkedAccountName] = useState<string>('');
 
-  // Estado de Meteorología para personas mayores
+  // Estado de Meteorología para personas mayores (Aislado por Familia)
   const [weatherLocation, setWeatherLocation] = useState<WeatherLocation>(POPULAR_LOCATIONS[0]);
   const [weatherData, setWeatherData] = useState<WeatherData | null>(null);
   const [weatherLoading, setWeatherLoading] = useState<boolean>(false);
@@ -106,16 +106,11 @@ export default function TabletDashboard() {
   const [isSearchingLocation, setIsSearchingLocation] = useState<boolean>(false);
   const [showForecastDetails, setShowForecastDetails] = useState<boolean>(false);
 
-  // Cargar ubicación guardada en localStorage al inicio
+  // Limpiar cualquier residuo de clave global antigua
   useEffect(() => {
     try {
-      const savedLoc = localStorage.getItem('tablet_weather_location');
-      if (savedLoc) {
-        setWeatherLocation(JSON.parse(savedLoc));
-      }
-    } catch (e) {
-      console.error('Error al leer ubicación del tiempo:', e);
-    }
+      localStorage.removeItem('tablet_weather_location');
+    } catch (e) {}
   }, []);
 
   // Consultar el tiempo cuando cambia la ubicación o al autenticarse
@@ -143,12 +138,14 @@ export default function TabletDashboard() {
 
   const handleSelectLocation = async (loc: WeatherLocation) => {
     setWeatherLocation(loc);
-    try {
-      localStorage.setItem('tablet_weather_location', JSON.stringify(loc));
-      if (linkedAccountId) {
+    
+    // Guardar en el almacenamiento local exclusivo de esta familia
+    if (linkedAccountId) {
+      try {
         localStorage.setItem(`tablet_weather_location_${linkedAccountId}`, JSON.stringify(loc));
-      }
-    } catch (e) {}
+      } catch (e) {}
+    }
+
     setShowLocationModal(false);
     setLocationSearchInput('');
     setLocationSearchResults([]);
@@ -197,13 +194,17 @@ export default function TabletDashboard() {
           setLinkedAccountId(currentAccId);
           setLinkedAccountName(accName);
 
-          // Cargar ubicación meteorológica guardada para esta cuenta
+          // Cargar ubicación meteorológica guardada exclusivamente para esta cuenta
           if (currentAccId) {
-            const savedAccLoc = localStorage.getItem(`tablet_weather_location_${currentAccId}`) || localStorage.getItem('tablet_weather_location');
+            const savedAccLoc = localStorage.getItem(`tablet_weather_location_${currentAccId}`);
             if (savedAccLoc) {
               try {
-                setWeatherLocation(JSON.parse(savedAccLoc));
+                const parsed = JSON.parse(savedAccLoc);
+                setWeatherLocation(parsed);
+                loadWeatherData(parsed);
               } catch (e) {}
+            } else {
+              setWeatherLocation(POPULAR_LOCATIONS[0]);
             }
           }
         } else {
@@ -220,7 +221,7 @@ export default function TabletDashboard() {
     } finally {
       setAuthChecking(false);
     }
-  }, []);
+  }, [loadWeatherData]);
 
   const handleVerifyPin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -248,14 +249,25 @@ export default function TabletDashboard() {
         setLinkedAccountId(data.account.id);
         setLinkedAccountName(data.account.name);
 
-        // Si la familia tiene una ciudad/ubicación guardada en la BD, aplicarla de inmediato
+        // Si la familia tiene una ciudad/ubicación guardada en la BD o en su caché exclusiva, aplicarla
         if (data.account.weather_location) {
           setWeatherLocation(data.account.weather_location);
           try {
             localStorage.setItem(`tablet_weather_location_${data.account.id}`, JSON.stringify(data.account.weather_location));
-            localStorage.setItem('tablet_weather_location', JSON.stringify(data.account.weather_location));
           } catch (e) {}
           loadWeatherData(data.account.weather_location);
+        } else {
+          const cached = localStorage.getItem(`tablet_weather_location_${data.account.id}`);
+          if (cached) {
+            try {
+              const parsed = JSON.parse(cached);
+              setWeatherLocation(parsed);
+              loadWeatherData(parsed);
+            } catch (e) {}
+          } else {
+            setWeatherLocation(POPULAR_LOCATIONS[0]);
+            loadWeatherData(POPULAR_LOCATIONS[0]);
+          }
         }
       }
       setIsAuthenticated(true);
@@ -282,9 +294,11 @@ export default function TabletDashboard() {
     setLinkedAccountId(null);
     setLinkedAccountName('');
     setInputPin('');
+    setWeatherLocation(POPULAR_LOCATIONS[0]);
+    setWeatherData(null);
   };
 
-  // 1. Cargar familiares y configuración de la cuenta vinculada
+  // 1. Cargar familiares y sincronizar configuración de la cuenta vinculada
   const loadParents = useCallback(async () => {
     if (!linkedAccountId) {
       setParents([]);
@@ -293,7 +307,7 @@ export default function TabletDashboard() {
     try {
       setLoading(true);
       
-      // Consultar ubicación guardada en la base de datos para esta cuenta
+      // Consultar ubicación guardada en la base de datos exclusivamente para esta cuenta
       if (linkedAccountId !== 'default') {
         const { data: accData } = await supabase
           .from('accounts')
@@ -305,7 +319,6 @@ export default function TabletDashboard() {
           setWeatherLocation(accData.weather_location);
           try {
             localStorage.setItem(`tablet_weather_location_${linkedAccountId}`, JSON.stringify(accData.weather_location));
-            localStorage.setItem('tablet_weather_location', JSON.stringify(accData.weather_location));
           } catch (e) {}
         }
       }
