@@ -231,24 +231,41 @@ export default function TabletDashboard() {
     }
   };
 
-  // 0. Comprobar sesión de acceso persistente de la tablet
+  // 0. Comprobar sesión de acceso persistente de la tablet validando la firma HMAC en el servidor
   useEffect(() => {
-    try {
-      const token = localStorage.getItem('tablet_session_token');
-      const accId = localStorage.getItem('tablet_account_id');
-      const accName = localStorage.getItem('tablet_account_name') || 'Mi Familia';
+    const verifySession = async () => {
+      try {
+        const token = localStorage.getItem('tablet_session_token');
 
-      if (token) {
-        const parts = token.split('.');
-        const expiresAt = parseInt(parts[0], 10);
-        if (!isNaN(expiresAt) && Date.now() < expiresAt) {
+        if (!token) {
+          setIsAuthenticated(false);
+          setAuthChecking(false);
+          return;
+        }
+
+        // Validar token y firma criptográfica contra el endpoint del servidor
+        const res = await fetch('/api/auth/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (res.ok && data.valid && data.account) {
           setIsAuthenticated(true);
-          const currentAccId = accId || (parts.length > 2 ? parts[1] : null);
+          const currentAccId = data.account.id;
+          const currentAccName = data.account.name || 'Mi Familia';
           setLinkedAccountId(currentAccId);
-          setLinkedAccountName(accName);
+          setLinkedAccountName(currentAccName);
+          localStorage.setItem('tablet_account_id', currentAccId);
+          localStorage.setItem('tablet_account_name', currentAccName);
 
-          // Cargar ubicación meteorológica guardada exclusivamente para esta cuenta
-          if (currentAccId) {
+          // Cargar ubicación meteorológica guardada
+          if (data.account.weather_location) {
+            setWeatherLocation(data.account.weather_location);
+            loadWeatherData(data.account.weather_location);
+          } else {
             const savedAccLoc = localStorage.getItem(`tablet_weather_location_${currentAccId}`);
             if (savedAccLoc) {
               try {
@@ -261,19 +278,21 @@ export default function TabletDashboard() {
             }
           }
         } else {
+          // Token inválido, expirado o manipulado: limpiar almacenamiento y solicitar PIN
           localStorage.removeItem('tablet_session_token');
           localStorage.removeItem('tablet_account_id');
           localStorage.removeItem('tablet_account_name');
           setIsAuthenticated(false);
         }
-      } else {
+      } catch (e) {
+        console.error('Error al verificar sesión segura:', e);
         setIsAuthenticated(false);
+      } finally {
+        setAuthChecking(false);
       }
-    } catch (e) {
-      setIsAuthenticated(false);
-    } finally {
-      setAuthChecking(false);
-    }
+    };
+
+    verifySession();
   }, [loadWeatherData]);
 
   const handleVerifyPin = async (e?: React.FormEvent) => {
@@ -677,7 +696,10 @@ export default function TabletDashboard() {
 
         if (!lastSync || now - lastSync >= SYNC_INTERVAL_MS) {
           console.log('[Tablet] Ejecutando sincronización periódica de citas (cada 5 horas)...');
-          const res = await fetch('/api/calendar/sync');
+          const token = localStorage.getItem('tablet_session_token');
+          const res = await fetch('/api/calendar/sync', {
+            headers: token ? { 'x-tablet-token': token } : {},
+          });
           if (res.ok) {
             localStorage.setItem(STORAGE_KEY, now.toString());
             if (selectedParent) {

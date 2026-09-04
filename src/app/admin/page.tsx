@@ -484,13 +484,8 @@ export default function AdminPortal() {
         if (data?.user) {
           const famName = registerFamilyName.trim() || 'Mi Familia';
           
-          // Generar PIN único aleatorio
-          const { data: allAccs } = await supabase.from('accounts').select('tablet_pin');
-          const usedPins = new Set((allAccs || []).map((a: any) => a.tablet_pin));
-          let autoPin = Math.floor(1000 + Math.random() * 9000).toString();
-          while (usedPins.has(autoPin)) {
-            autoPin = Math.floor(1000 + Math.random() * 9000).toString();
-          }
+          // Generar PIN aleatorio de 4 dígitos
+          const autoPin = Math.floor(1000 + Math.random() * 9000).toString();
 
           await supabase
             .from('accounts')
@@ -667,10 +662,15 @@ export default function AdminPortal() {
   // 6. Sincronizar Google Calendar
   const handleCalendarSync = async () => {
     setIsSyncing(true);
-    setSyncStatus('Sincronizando...');
+    setSyncStatus('Sincronizando con Google Calendar...');
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
       const url = currentAccount?.id ? `/api/calendar/sync?accountId=${currentAccount.id}` : '/api/calendar/sync';
-      const res = await fetch(url);
+      const res = await fetch(url, {
+        headers: accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {},
+      });
       const data = await res.json();
       
       if (!res.ok) throw new Error(data.error || 'Error desconocido');
@@ -706,8 +706,13 @@ export default function AdminPortal() {
       const formData = new FormData();
       formData.append('file', pdfFile);
 
+      // Obtener token JWT de la sesión autenticada
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+
       const res = await fetch('/api/medication/parse', {
         method: 'POST',
+        headers: accessToken ? { 'Authorization': `Bearer ${accessToken}` } : {},
         body: formData,
       });
 

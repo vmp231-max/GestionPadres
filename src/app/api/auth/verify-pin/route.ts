@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { getClientIp, checkRateLimit, recordFailedAttempt, resetRateLimit } from '@/lib/rate-limiter';
+import { generateTabletToken } from '@/lib/tablet-auth';
 
 // Duración de la sesión en días (configurable con TABLET_SESSION_DAYS o 30 días por defecto)
 const SESSION_DAYS = parseInt(process.env.TABLET_SESSION_DAYS || '30', 10);
@@ -8,9 +9,31 @@ const SESSION_DAYS = parseInt(process.env.TABLET_SESSION_DAYS || '30', 10);
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
+// Retardo artificial para mitigar ataques de temporización
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const clientIp = getClientIp(req);
+
+    // 1. Control de Tasa (Rate Limiting) Anti-Fuerza Bruta
+    const rateCheck = checkRateLimit(clientIp, 5, 15 * 60 * 1000);
+    if (!rateCheck.allowed) {
+      return NextResponse.json(
+        {
+          error: rateCheck.error || 'Demasiados intentos fallidos. Acceso bloqueado temporalmente.',
+          blockedSeconds: rateCheck.blockedSeconds,
+        },
+        { 
+          status: 429,
+          headers: {
+            'Retry-After': String(rateCheck.blockedSeconds),
+          }
+        }
+      );
+    }
+
+    const body = await req.json().catch(() => ({}));
     const pin = typeof body.pin === 'string' ? body.pin.trim() : '';
 
     if (!pin) {
@@ -29,7 +52,7 @@ export async function POST(req: NextRequest) {
 
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Buscar directamente la familia correspondiente al PIN único introducido
+    // Buscar directamente la familia correspondiente al PIN introducido
     const { data: account, error } = await supabase
       .from('accounts')
       .select('id, name, tablet_pin, weather_location')
@@ -44,21 +67,29 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // PIN INCORRECTO: Registrar intento fallido y aplicar retardo protector
     if (!account) {
+      // Retardo de 400ms para ralentizar ataques automatizados
+      await delay(400);
+
+      const failResult = recordFailedAttempt(clientIp, 5, 15 * 60 * 1000);
       return NextResponse.json(
-        { error: 'PIN incorrecto. Ninguna familia está asociada a este PIN.' },
-        { status: 401 }
+        { 
+          error: failResult.error || 'PIN incorrecto. Ninguna familia está asociada a este PIN.',
+          remainingAttempts: failResult.remainingAttempts,
+        },
+        { status: failResult.allowed ? 401 : 429 }
       );
     }
+
+    // PIN CORRECTO: Restablecer contador de intentos de la IP
+    resetRateLimit(clientIp);
 
     // Calcular fecha de expiración en milisegundos
     const expiresAt = Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000;
 
-    // Generar un token con firma HMAC para que no pueda ser alterado
-    const secret = supabaseKey || 'secret_tablet_session_key';
-    const payload = `${expiresAt}:${account.id}`;
-    const signature = crypto.createHmac('sha256', secret).update(payload).digest('hex');
-    const token = `${expiresAt}.${account.id}.${signature}`;
+    // Generar token con HMAC-SHA256 y secreto del servidor
+    const token = generateTabletToken(account.id, expiresAt);
 
     return NextResponse.json({
       success: true,
@@ -78,3 +109,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+
