@@ -83,52 +83,49 @@ create table if not exists public.notices (
     created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- 6. Configurar Row Level Security (RLS)
+-- 6. Tabla de Fotos Familiares (Marco Digital)
+create table if not exists public.family_photos (
+    id uuid default gen_random_uuid() primary key,
+    account_id uuid references public.accounts(id) on delete cascade not null,
+    image_url text not null, -- URL o Base64 optimizado
+    caption text, -- Título o pie de foto cariñoso (ej. 'Cumpleaños de Lucas')
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 7. Tabla de Contactos Familiares y Emergencias SOS
+create table if not exists public.emergency_contacts (
+    id uuid default gen_random_uuid() primary key,
+    account_id uuid references public.accounts(id) on delete cascade not null,
+    name text not null, -- ej. 'Vicente', 'Dra. Carmen', '112 Emergencias'
+    relationship text, -- ej. 'Hijo', 'Hija', 'Médico de Familia', 'Servicio de Urgencias'
+    phone text not null, -- Teléfono directo o número de emergencia
+    is_emergency boolean default false not null, -- True si es SOS / 112 / Ambulancia
+    avatar_url text, -- Foto o avatar opcional
+    order_num integer default 0 not null,
+    created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 8. Configurar Row Level Security (RLS)
 alter table public.accounts enable row level security;
 alter table public.parents enable row level security;
 alter table public.medications enable row level security;
 alter table public.appointments enable row level security;
 alter table public.notices enable row level security;
+alter table public.family_photos enable row level security;
+alter table public.emergency_contacts enable row level security;
 
 -- Políticas de acceso
-create policy "Permitir acceso a accounts" on public.accounts
-    for all using (true);
+create policy "Permitir acceso a accounts" on public.accounts for all using (true);
+create policy "Permitir acceso a parents" on public.parents for all using (true);
+create policy "Permitir gestión completa de medicación" on public.medications for all using (true);
+create policy "Permitir gestión completa de citas" on public.appointments for all using (true);
+create policy "Permitir gestión completa de avisos" on public.notices for all using (true);
+create policy "Permitir gestión de fotos familiares" on public.family_photos for all using (true);
+create policy "Permitir gestión de contactos de emergencia" on public.emergency_contacts for all using (true);
 
-create policy "Permitir acceso a parents" on public.parents
-    for all using (true);
-
-create policy "Permitir gestión completa de medicación" on public.medications
-    for all using (true);
-
-create policy "Permitir gestión completa de citas" on public.appointments
-    for all using (true);
-
-create policy "Permitir gestión completa de avisos" on public.notices
-    for all using (true);
-
--- 7. Habilitar Supabase Realtime para sincronización en tiempo real
+-- 9. Habilitar Supabase Realtime para sincronización en tiempo real
 alter publication supabase_realtime add table public.notices;
 alter publication supabase_realtime add table public.medications;
 alter publication supabase_realtime add table public.appointments;
-
--- 8. Migración para actualizar bases de datos existentes
--- Ejecuta este bloque en Supabase SQL Editor:
-/*
-create table if not exists public.accounts (
-    id uuid default gen_random_uuid() primary key,
-    user_id uuid references auth.users(id) on delete cascade unique,
-    name text not null default 'Mi Familia',
-    tablet_pin text default '1234' not null,
-    created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
-alter table public.accounts enable row level security;
-create policy "Permitir acceso a accounts" on public.accounts for all using (true);
-
-alter table public.parents add column if not exists account_id uuid references public.accounts(id) on delete cascade;
-alter table public.parents add column if not exists calendar_id text;
-alter table public.appointments add column if not exists account_id uuid references public.accounts(id) on delete cascade;
-alter table public.notices add column if not exists account_id uuid references public.accounts(id) on delete cascade;
-alter table public.medications add column if not exists schedule_type text default 'diario' not null;
-alter table public.medications add column if not exists schedule_days text default '' not null;
-*/
+alter publication supabase_realtime add table public.family_photos;
+alter publication supabase_realtime add table public.emergency_contacts;

@@ -17,11 +17,17 @@ import {
   Clock,
   Check,
   AlertTriangle,
+  Key, 
+  UserPlus,
+  Phone,
+  PhoneCall,
+  Image as ImageIcon,
+  Heart,
+  ShieldAlert,
+  Users,
   Pencil,
   X,
-  Users,
-  Key,
-  UserPlus
+  User
 } from 'lucide-react';
 import { 
   ScheduleType, 
@@ -29,6 +35,7 @@ import {
   getScheduleDescription, 
   inferScheduleFromText 
 } from '@/lib/medication-schedule';
+import { compressImage } from '@/lib/image-compression';
 
 interface Account {
   id: string;
@@ -43,6 +50,26 @@ interface Parent {
   name: string;
   calendar_id?: string | null;
   avatar_url?: string;
+}
+
+interface FamilyPhoto {
+  id: string;
+  account_id: string;
+  image_url: string;
+  caption?: string;
+  created_at: string;
+}
+
+interface EmergencyContact {
+  id: string;
+  account_id: string;
+  name: string;
+  relationship?: string;
+  phone: string;
+  is_emergency: boolean;
+  avatar_url?: string;
+  order_num?: number;
+  created_at: string;
 }
 
 interface Medication {
@@ -274,6 +301,20 @@ export default function AdminPortal() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string>('');
 
+  // Marco de Fotos Familiar
+  const [photos, setPhotos] = useState<FamilyPhoto[]>([]);
+  const [photoCaption, setPhotoCaption] = useState<string>('');
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState<boolean>(false);
+
+  // Contactos Familiares y Emergencias SOS
+  const [contacts, setContacts] = useState<EmergencyContact[]>([]);
+  const [isAddingContact, setIsAddingContact] = useState<boolean>(false);
+  const [contactName, setContactName] = useState<string>('');
+  const [contactRelationship, setContactRelationship] = useState<string>('');
+  const [contactPhone, setContactPhone] = useState<string>('');
+  const [contactIsEmergency, setContactIsEmergency] = useState<boolean>(false);
+  const [isSavingContact, setIsSavingContact] = useState<boolean>(false);
+
   // 1. Escuchar el estado de autenticación de Supabase
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -384,6 +425,24 @@ export default function AdminPortal() {
       } else {
         setAppointments([]);
       }
+
+      // Cargar fotos del marco familiar de esta cuenta
+      const { data: photosData } = await supabase
+        .from('family_photos')
+        .select('*')
+        .eq('account_id', accountId)
+        .order('created_at', { ascending: false });
+      setPhotos(photosData || []);
+
+      // Cargar contactos familiares y de emergencia
+      const { data: contactsData } = await supabase
+        .from('emergency_contacts')
+        .select('*')
+        .eq('account_id', accountId)
+        .order('is_emergency', { ascending: false })
+        .order('order_num', { ascending: true })
+        .order('created_at', { ascending: true });
+      setContacts(contactsData || []);
 
     } catch (err) {
       console.error('Error al cargar datos de administración:', err);
@@ -892,6 +951,128 @@ export default function AdminPortal() {
       setNotices(prev => prev.filter(n => n.id !== noticeId));
     } catch (err: any) {
       alert(`Error al borrar aviso: ${err.message || err}`);
+    }
+  };
+
+  // 9. Gestión de Fotos Familiares (Marco Digital)
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentAccount) return;
+
+    setIsUploadingPhoto(true);
+    try {
+      // Comprimir foto en el navegador (1200x1200 máx, calidad 0.8)
+      const compressedBase64 = await compressImage(file, 1200, 1200, 0.8);
+
+      const { data, error } = await supabase
+        .from('family_photos')
+        .insert({
+          account_id: currentAccount.id,
+          image_url: compressedBase64,
+          caption: photoCaption.trim() || null
+        })
+        .select();
+
+      if (error) throw error;
+
+      if (data && data[0]) {
+        setPhotos(prev => [data[0], ...prev]);
+      }
+
+      setPhotoCaption('');
+      // Limpiar input file
+      e.target.value = '';
+      alert('¡Foto subida correctamente al marco digital familiar!');
+    } catch (err: any) {
+      alert(`Error al subir la foto: ${err.message || err}`);
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
+
+  const deletePhoto = async (photoId: string) => {
+    if (!confirm('¿Deseas eliminar esta foto del marco digital?')) return;
+    try {
+      const { error } = await supabase.from('family_photos').delete().eq('id', photoId);
+      if (error) throw error;
+      setPhotos(prev => prev.filter(p => p.id !== photoId));
+      alert('Foto eliminada correctamente.');
+    } catch (err: any) {
+      alert(`Error al eliminar foto: ${err.message || err}`);
+    }
+  };
+
+  // 10. Gestión de Contactos Familiares y Emergencias SOS
+  const handleSaveContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!contactName.trim() || !contactPhone.trim() || !currentAccount) return;
+
+    setIsSavingContact(true);
+    try {
+      const { data, error } = await supabase
+        .from('emergency_contacts')
+        .insert({
+          account_id: currentAccount.id,
+          name: contactName.trim(),
+          relationship: contactRelationship.trim() || null,
+          phone: contactPhone.trim(),
+          is_emergency: contactIsEmergency,
+          order_num: contactIsEmergency ? 0 : 1
+        })
+        .select();
+
+      if (error) throw error;
+
+      if (data && data[0]) {
+        setContacts(prev => [...prev, data[0]]);
+      }
+
+      setContactName('');
+      setContactRelationship('');
+      setContactPhone('');
+      setContactIsEmergency(false);
+      setIsAddingContact(false);
+      alert('¡Contacto añadido correctamente!');
+    } catch (err: any) {
+      alert(`Error al guardar contacto: ${err.message || err}`);
+    } finally {
+      setIsSavingContact(false);
+    }
+  };
+
+  const deleteContact = async (contactId: string) => {
+    if (!confirm('¿Deseas eliminar este contacto?')) return;
+    try {
+      const { error } = await supabase.from('emergency_contacts').delete().eq('id', contactId);
+      if (error) throw error;
+      setContacts(prev => prev.filter(c => c.id !== contactId));
+      alert('Contacto eliminado correctamente.');
+    } catch (err: any) {
+      alert(`Error al eliminar contacto: ${err.message || err}`);
+    }
+  };
+
+  const handleAddDefaultEmergencyContacts = async () => {
+    if (!currentAccount) return;
+    try {
+      const defaults = [
+        { account_id: currentAccount.id, name: '112 Emergencias', relationship: 'Servicio de Emergencias General', phone: '112', is_emergency: true, order_num: 0 },
+        { account_id: currentAccount.id, name: '061 Urgencias Médicas', relationship: 'Urgencias Sanitarias', phone: '061', is_emergency: true, order_num: 1 },
+      ];
+
+      const { data, error } = await supabase
+        .from('emergency_contacts')
+        .insert(defaults)
+        .select();
+
+      if (error) throw error;
+
+      if (data) {
+        setContacts(prev => [...data, ...prev]);
+      }
+      alert('¡Números de emergencia 112 y 061 añadidos correctamente!');
+    } catch (err: any) {
+      alert(`Error al añadir contactos por defecto: ${err.message || err}`);
     }
   };
 
@@ -1428,6 +1609,273 @@ export default function AdminPortal() {
                 })
               )}
             </div>
+          </div>
+        </section>
+
+      </div>
+
+      {/* SECCIÓN NUEVA: CONTACTOS FAMILIARES Y EMERGENCIAS SOS + MARCO DE FOTOS FAMILIAR */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(350px, 1fr))', gap: '24px' }}>
+        
+        {/* PANEL DE CONTACTOS FAMILIARES Y EMERGENCIAS */}
+        <section className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+            <h2 style={{ fontSize: '1.35rem', display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
+              <PhoneCall size={22} color="var(--color-error)" />
+              <span>Contactos y Emergencias SOS</span>
+            </h2>
+            <button
+              type="button"
+              onClick={() => setIsAddingContact(!isAddingContact)}
+              className="btn btn-secondary"
+              style={{ padding: '6px 12px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              {isAddingContact ? <X size={14} /> : <Plus size={14} />}
+              <span>{isAddingContact ? 'Cancelar' : 'Nuevo Contacto'}</span>
+            </button>
+          </div>
+
+          <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.9rem', margin: 0 }}>
+            Configura los números a los que tus familiares pueden llamar con un solo toque desde la tablet.
+          </p>
+
+          {/* Formulario de Alta de Contacto */}
+          {isAddingContact && (
+            <form onSubmit={handleSaveContact} className="glass-card" style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px', borderLeft: '4px solid var(--color-info)' }}>
+              <strong style={{ fontSize: '0.95rem', color: 'var(--color-info)' }}>Añadir Contacto o Servicio</strong>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Nombre *</label>
+                  <input
+                    type="text"
+                    required
+                    value={contactName}
+                    onChange={(e) => setContactName(e.target.value)}
+                    placeholder="ej. Vicente o Dra. Carmen"
+                    style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+                  />
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Parentesco / Rol</label>
+                  <input
+                    type="text"
+                    value={contactRelationship}
+                    onChange={(e) => setContactRelationship(e.target.value)}
+                    placeholder="ej. Hijo, Vecino, Médico"
+                    style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Teléfono *</label>
+                <input
+                  type="tel"
+                  required
+                  value={contactPhone}
+                  onChange={(e) => setContactPhone(e.target.value)}
+                  placeholder="ej. 612345678 o 112"
+                  style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+                />
+              </div>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
+                <input
+                  type="checkbox"
+                  checked={contactIsEmergency}
+                  onChange={(e) => setContactIsEmergency(e.target.checked)}
+                  style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                />
+                <span>Marcar como 🚨 <strong>Servicio de Emergencia SOS Prioritario</strong> (ej. 112, Ambulancia)</span>
+              </label>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' }}>
+                <button type="button" onClick={() => setIsAddingContact(false)} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.85rem' }}>
+                  Cancelar
+                </button>
+                <button type="submit" disabled={isSavingContact} className="btn btn-success" style={{ padding: '6px 14px', fontSize: '0.85rem', fontWeight: 700 }}>
+                  <Check size={14} />
+                  <span>{isSavingContact ? 'Guardando...' : 'Guardar Contacto'}</span>
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Botón de ayuda rápida si no hay emergencias */}
+          {contacts.length === 0 && (
+            <button
+              type="button"
+              onClick={handleAddDefaultEmergencyContacts}
+              className="btn btn-secondary"
+              style={{ padding: '8px 12px', fontSize: '0.85rem', border: '1px dashed var(--color-error)', color: '#fca5a5' }}
+            >
+              <ShieldAlert size={16} />
+              <span>⚡ Añadir 112 y 061 Urgencias por defecto</span>
+            </button>
+          )}
+
+          {/* Lista de Contactos */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '250px', overflowY: 'auto' }}>
+            {contacts.length === 0 ? (
+              <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem', fontStyle: 'italic', margin: '8px 0' }}>
+                No tienes contactos guardados. Pulsa "Nuevo Contacto" para registrar a los familiares o teléfonos de ayuda.
+              </p>
+            ) : (
+              contacts.map((c) => (
+                <div
+                  key={c.id}
+                  className="glass-card"
+                  style={{
+                    padding: '10px 14px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    borderLeft: c.is_emergency ? '4px solid var(--color-error)' : '4px solid var(--color-info)',
+                    background: c.is_emergency ? 'rgba(239, 68, 68, 0.05)' : 'rgba(255,255,255,0.02)'
+                  }}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <strong style={{ fontSize: '1rem', color: c.is_emergency ? '#f87171' : 'var(--color-text-primary)' }}>
+                        {c.name}
+                      </strong>
+                      {c.relationship && (
+                        <span style={{ fontSize: '0.75rem', padding: '1px 6px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', color: 'var(--color-text-secondary)' }}>
+                          {c.relationship}
+                        </span>
+                      )}
+                      {c.is_emergency && (
+                        <span className="badge badge-error" style={{ fontSize: '0.65rem', padding: '1px 6px' }}>SOS</span>
+                      )}
+                    </div>
+                    <span style={{ fontSize: '0.85rem', color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <Phone size={12} /> {c.phone}
+                    </span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => deleteContact(c.id)}
+                    style={{ background: 'transparent', border: 'none', color: 'var(--color-error)', cursor: 'pointer', padding: '4px' }}
+                    title="Eliminar contacto"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </section>
+
+        {/* PANEL DEL MARCO DE FOTOS FAMILIAR */}
+        <section className="glass-panel" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--glass-border)', paddingBottom: '12px' }}>
+            <h2 style={{ fontSize: '1.35rem', display: 'flex', alignItems: 'center', gap: '10px', margin: 0 }}>
+              <Heart size={22} color="#ec4899" />
+              <span>Marco de Fotos Familiar Digital</span>
+            </h2>
+            <span className="badge badge-info" style={{ fontSize: '0.75rem' }}>{photos.length} fotos</span>
+          </div>
+
+          <p style={{ color: 'var(--color-text-secondary)', fontSize: '0.9rem', margin: 0 }}>
+            Sube recuerdos y fotos de la familia (nietos, celebraciones, viajes) para que vayan rotando en la tablet.
+          </p>
+
+          {/* Zona de subida de foto */}
+          <div className="glass-card" style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px', borderLeft: '4px solid #ec4899' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+              <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Título o Pie de Foto (Opcional)</label>
+              <input
+                type="text"
+                value={photoCaption}
+                onChange={(e) => setPhotoCaption(e.target.value)}
+                placeholder="ej. Los nietos en el parque, Cumpleaños de Lucas..."
+                style={{ padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <label
+                className="btn btn-primary"
+                style={{
+                  padding: '8px 14px',
+                  fontSize: '0.85rem',
+                  cursor: isUploadingPhoto ? 'wait' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  flex: 1,
+                  justifyContent: 'center'
+                }}
+              >
+                {isUploadingPhoto ? (
+                  <>
+                    <RefreshCw className="spin" size={14} />
+                    <span>Optimizando y subiendo...</span>
+                  </>
+                ) : (
+                  <>
+                    <ImageIcon size={14} />
+                    <span>Seleccionar Foto y Subir</span>
+                  </>
+                )}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoUpload}
+                  disabled={isUploadingPhoto}
+                  style={{ display: 'none' }}
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* Galería de Fotos Subidas */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))', gap: '10px', maxHeight: '220px', overflowY: 'auto', paddingRight: '4px' }}>
+            {photos.length === 0 ? (
+              <p style={{ color: 'var(--color-text-muted)', fontSize: '0.9rem', fontStyle: 'italic', gridColumn: '1 / -1', margin: '8px 0' }}>
+                Aún no has subido ninguna foto. ¡Sube la primera para alegrar el día a tus familiares!
+              </p>
+            ) : (
+              photos.map((p) => (
+                <div key={p.id} className="glass-card" style={{ position: 'relative', overflow: 'hidden', borderRadius: 'var(--radius-sm)', aspectRatio: '1', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000000' }}>
+                  <img
+                    src={p.image_url}
+                    alt={p.caption || 'Foto familiar'}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                  {p.caption && (
+                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.7)', color: '#ffffff', fontSize: '0.65rem', padding: '2px 4px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {p.caption}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => deletePhoto(p.id)}
+                    style={{
+                      position: 'absolute',
+                      top: '4px',
+                      right: '4px',
+                      background: 'rgba(239, 68, 68, 0.85)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '50%',
+                      width: '24px',
+                      height: '24px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.5)'
+                    }}
+                    title="Eliminar foto"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              ))
+            )}
           </div>
         </section>
 

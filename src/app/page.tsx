@@ -24,7 +24,14 @@ import {
   CloudRain,
   Search,
   Compass,
-  X
+  X,
+  Phone,
+  PhoneCall,
+  Heart,
+  ChevronLeft,
+  ChevronRight,
+  Maximize2,
+  ShieldAlert
 } from 'lucide-react';
 import { 
   isScheduledForToday, 
@@ -43,6 +50,26 @@ interface Parent {
   id: string;
   name: string;
   avatar_url?: string;
+}
+
+interface FamilyPhoto {
+  id: string;
+  account_id: string;
+  image_url: string;
+  caption?: string;
+  created_at: string;
+}
+
+interface EmergencyContact {
+  id: string;
+  account_id: string;
+  name: string;
+  relationship?: string;
+  phone: string;
+  is_emergency: boolean;
+  avatar_url?: string;
+  order_num?: number;
+  created_at: string;
 }
 
 interface Appointment {
@@ -105,6 +132,24 @@ export default function TabletDashboard() {
   const [locationSearchResults, setLocationSearchResults] = useState<WeatherLocation[]>([]);
   const [isSearchingLocation, setIsSearchingLocation] = useState<boolean>(false);
   const [showForecastDetails, setShowForecastDetails] = useState<boolean>(false);
+
+  // Marco de Fotos Familiar Digital
+  const [photos, setPhotos] = useState<FamilyPhoto[]>([]);
+  const [currentPhotoIndex, setCurrentPhotoIndex] = useState<number>(0);
+  const [fullscreenPhoto, setFullscreenPhoto] = useState<FamilyPhoto | null>(null);
+
+  // Contactos Familiares y Emergencias SOS
+  const [contacts, setContacts] = useState<EmergencyContact[]>([]);
+  const [showContactsModal, setShowContactsModal] = useState<boolean>(false);
+
+  // Rotación automática de fotos cada 10 segundos
+  useEffect(() => {
+    if (photos.length <= 1) return;
+    const interval = setInterval(() => {
+      setCurrentPhotoIndex((prev) => (prev + 1) % photos.length);
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [photos.length]);
 
   // Limpiar cualquier residuo de clave global antigua
   useEffect(() => {
@@ -321,6 +366,24 @@ export default function TabletDashboard() {
             localStorage.setItem(`tablet_weather_location_${linkedAccountId}`, JSON.stringify(accData.weather_location));
           } catch (e) {}
         }
+
+        // Cargar fotos familiares
+        const { data: photosData } = await supabase
+          .from('family_photos')
+          .select('*')
+          .eq('account_id', linkedAccountId)
+          .order('created_at', { ascending: false });
+        setPhotos(photosData || []);
+
+        // Cargar contactos familiares y emergencias
+        const { data: contactsData } = await supabase
+          .from('emergency_contacts')
+          .select('*')
+          .eq('account_id', linkedAccountId)
+          .order('is_emergency', { ascending: false })
+          .order('order_num', { ascending: true })
+          .order('created_at', { ascending: true });
+        setContacts(contactsData || []);
       }
 
       let query = supabase.from('parents').select('*').order('name', { ascending: true });
@@ -332,7 +395,7 @@ export default function TabletDashboard() {
       if (error) throw error;
       setParents(data || []);
     } catch (err) {
-      console.error('Error al cargar familiares:', err);
+      console.error('Error al cargar datos familiares:', err);
     } finally {
       setLoading(false);
     }
@@ -873,14 +936,41 @@ function getAvatarGradient(name: string, index: number) {
           <div className="blob blob-2"></div>
         </div>
 
-        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-          <span style={{ fontSize: '1.1rem', color: 'var(--color-info)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            {linkedAccountName ? `Cuenta: ${linkedAccountName}` : 'Portal Médico Familiar'}
-          </span>
-          <h1 style={{ fontSize: '2.8rem', fontWeight: 800, marginTop: '4px' }}>¿Quién eres?</h1>
-          <p style={{ fontSize: '1.25rem', color: 'var(--color-text-secondary)', marginTop: '4px' }}>
-            Selecciona tu perfil para ver tu medicación y citas de hoy
-          </p>
+        {/* Cabecera de Selección */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', maxWidth: '960px', marginBottom: '20px', flexWrap: 'wrap', gap: '12px' }}>
+          <div>
+            <span style={{ fontSize: '1.05rem', color: 'var(--color-info)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              {linkedAccountName ? `Cuenta: ${linkedAccountName}` : 'Portal Médico Familiar'}
+            </span>
+            <h1 style={{ fontSize: '2.5rem', fontWeight: 800, marginTop: '2px', margin: 0 }}>¿Quién eres?</h1>
+            <p style={{ fontSize: '1.15rem', color: 'var(--color-text-secondary)', marginTop: '2px', margin: 0 }}>
+              Selecciona tu perfil para ver tu medicación y citas de hoy
+            </p>
+          </div>
+
+          {/* Botón Accesible de Contactos y Emergencias */}
+          <button
+            type="button"
+            onClick={() => setShowContactsModal(true)}
+            className="btn"
+            style={{
+              padding: '12px 20px',
+              fontSize: '1.05rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '10px',
+              background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(245, 158, 11, 0.2) 100%)',
+              border: '2px solid var(--color-error)',
+              color: '#ffffff',
+              borderRadius: 'var(--radius-lg)',
+              boxShadow: '0 4px 15px rgba(239, 68, 68, 0.25)',
+              cursor: 'pointer'
+            }}
+          >
+            <PhoneCall size={22} color="#f87171" />
+            <span>📞 Contactos y Ayuda SOS</span>
+          </button>
         </div>
 
         {/* WIDGET METEOROLÓGICO ACCESIBLE PARA PERSONAS MAYORES */}
@@ -1009,6 +1099,115 @@ function getAvatarGradient(name: string, index: number) {
             </div>
           )}
         </div>
+
+        {/* MARCO DE FOTOS FAMILIAR DIGITAL (Si hay fotos subidas) */}
+        {photos.length > 0 && (
+          <div className="glass-panel" style={{ width: '100%', maxWidth: '960px', padding: '20px', marginBottom: '32px', display: 'flex', flexDirection: 'column', gap: '14px', background: 'rgba(236, 72, 153, 0.03)', border: '1px solid rgba(236, 72, 153, 0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Heart size={20} color="#ec4899" fill="#ec4899" />
+                <span style={{ fontSize: '1.15rem', fontWeight: 700, color: '#f472b6' }}>Marco de Fotos de la Familia</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
+                  {currentPhotoIndex + 1} de {photos.length}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setFullscreenPhoto(photos[currentPhotoIndex])}
+                  className="btn btn-secondary"
+                  style={{ padding: '4px 10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                  title="Ver en pantalla completa"
+                >
+                  <Maximize2 size={14} />
+                  <span>Ampliar</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Imagen Principal del Carrusel */}
+            <div style={{ position: 'relative', width: '100%', height: '340px', borderRadius: 'var(--radius-md)', overflow: 'hidden', background: '#090d16', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <img
+                src={photos[currentPhotoIndex]?.image_url}
+                alt={photos[currentPhotoIndex]?.caption || 'Foto familiar'}
+                onClick={() => setFullscreenPhoto(photos[currentPhotoIndex])}
+                style={{ width: '100%', height: '100%', objectFit: 'contain', cursor: 'pointer' }}
+              />
+
+              {/* Botones de navegación táctiles grandes */}
+              {photos.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPhotoIndex((prev) => (prev - 1 + photos.length) % photos.length)}
+                    style={{
+                      position: 'absolute',
+                      left: '12px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'rgba(0,0,0,0.65)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      color: 'white',
+                      borderRadius: '50%',
+                      width: '46px',
+                      height: '46px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 10px rgba(0,0,0,0.4)'
+                    }}
+                    title="Foto anterior"
+                  >
+                    <ChevronLeft size={26} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPhotoIndex((prev) => (prev + 1) % photos.length)}
+                    style={{
+                      position: 'absolute',
+                      right: '12px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'rgba(0,0,0,0.65)',
+                      border: '1px solid rgba(255,255,255,0.2)',
+                      color: 'white',
+                      borderRadius: '50%',
+                      width: '46px',
+                      height: '46px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: 'pointer',
+                      boxShadow: '0 4px 10px rgba(0,0,0,0.4)'
+                    }}
+                    title="Foto siguiente"
+                  >
+                    <ChevronRight size={26} />
+                  </button>
+                </>
+              )}
+
+              {/* Pie de Foto superpuesto */}
+              {photos[currentPhotoIndex]?.caption && (
+                <div style={{
+                  position: 'absolute',
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  padding: '12px 20px',
+                  background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0) 100%)',
+                  color: '#ffffff',
+                  fontSize: '1.2rem',
+                  fontWeight: 600,
+                  textAlign: 'center'
+                }}>
+                  ❤️ {photos[currentPhotoIndex].caption}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* MODAL PARA CAMBIAR CIUDAD / PUEBLO */}
         {showLocationModal && (
@@ -1205,26 +1404,350 @@ function getAvatarGradient(name: string, index: number) {
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: '24px', marginTop: '40px', alignItems: 'center' }}>
-          <button
-            onClick={handleUnlinkAccount}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--color-text-muted)',
-              fontSize: '0.9rem',
-              cursor: 'pointer',
+        {/* MODAL DIRECTO DE CONTACTOS FAMILIARES Y EMERGENCIAS SOS */}
+        {showContactsModal && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.85)',
+            backdropFilter: 'blur(8px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000,
+            padding: '20px'
+          }}>
+            <div className="glass-panel" style={{
+              width: '100%',
+              maxWidth: '760px',
+              maxHeight: '92vh',
+              overflowY: 'auto',
+              padding: '28px',
               display: 'flex',
+              flexDirection: 'column',
+              gap: '20px',
+              background: '#0a1020',
+              border: '2px solid rgba(239, 68, 68, 0.4)',
+              borderRadius: 'var(--radius-xl)',
+              boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6)'
+            }}>
+              {/* Cabecera */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--glass-border)', paddingBottom: '16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ background: 'rgba(239, 68, 68, 0.2)', padding: '10px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <PhoneCall size={28} color="#ef4444" />
+                  </div>
+                  <div>
+                    <h2 style={{ fontSize: '1.6rem', fontWeight: 800, margin: 0, color: '#ffffff' }}>Directorio Familiar y Emergencias</h2>
+                    <p style={{ fontSize: '0.95rem', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>Toca cualquier botón verde para llamar inmediatamente</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowContactsModal(false)}
+                  style={{
+                    background: 'rgba(255, 255, 255, 0.08)',
+                    border: '1px solid var(--glass-border)',
+                    color: '#ffffff',
+                    borderRadius: '50%',
+                    width: '44px',
+                    height: '44px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer'
+                  }}
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              {/* SECCIÓN 1: NÚMEROS DE EMERGENCIA (112 y 061 siempre disponibles + SOS personalizados) */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <ShieldAlert size={20} color="#ef4444" />
+                  <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f87171', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Emergencias Inmediatas (SOS)
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                  {/* 112 Emergencias */}
+                  <a
+                    href="tel:112"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '16px 20px',
+                      background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
+                      color: '#ffffff',
+                      borderRadius: 'var(--radius-lg)',
+                      textDecoration: 'none',
+                      boxShadow: '0 4px 15px rgba(220, 38, 38, 0.4)',
+                      fontWeight: 800,
+                      transition: 'transform 0.1s ease'
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: '1.8rem', lineHeight: 1 }}>112</div>
+                      <div style={{ fontSize: '0.9rem', opacity: 0.9, marginTop: '2px' }}>Emergencias Generales</div>
+                    </div>
+                    <Phone size={28} />
+                  </a>
+
+                  {/* 061 Urgencias Sanitarias */}
+                  <a
+                    href="tel:061"
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '16px 20px',
+                      background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
+                      color: '#ffffff',
+                      borderRadius: 'var(--radius-lg)',
+                      textDecoration: 'none',
+                      boxShadow: '0 4px 15px rgba(234, 88, 12, 0.4)',
+                      fontWeight: 800,
+                      transition: 'transform 0.1s ease'
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: '1.8rem', lineHeight: 1 }}>061</div>
+                      <div style={{ fontSize: '0.9rem', opacity: 0.9, marginTop: '2px' }}>Urgencias Sanitarias</div>
+                    </div>
+                    <Phone size={28} />
+                  </a>
+
+                  {/* Contactos marcados como SOS en la base de datos */}
+                  {contacts.filter(c => c.is_emergency).map(contact => (
+                    <a
+                      key={contact.id}
+                      href={`tel:${contact.phone}`}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '16px 20px',
+                        background: 'linear-gradient(135deg, #b91c1c 0%, #991b1b 100%)',
+                        color: '#ffffff',
+                        borderRadius: 'var(--radius-lg)',
+                        textDecoration: 'none',
+                        boxShadow: '0 4px 15px rgba(185, 28, 28, 0.4)',
+                        fontWeight: 800
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: '1.25rem', lineHeight: 1.2 }}>{contact.name}</div>
+                        <div style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '2px' }}>
+                          {contact.relationship || 'Emergencia'} • {contact.phone}
+                        </div>
+                      </div>
+                      <Phone size={26} />
+                    </a>
+                  ))}
+                </div>
+              </div>
+
+              {/* SECCIÓN 2: CONTACTOS FAMILIARES Y CUIDADORES */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <User size={20} color="var(--color-info)" />
+                  <span style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-info)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                    Familiares y Cuidadores
+                  </span>
+                </div>
+
+                {contacts.filter(c => !c.is_emergency).length === 0 && contacts.filter(c => c.is_emergency).length === 0 ? (
+                  <div style={{ padding: '24px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-md)', border: '1px solid var(--glass-border)' }}>
+                    <p style={{ fontSize: '1.1rem', color: 'var(--color-text-secondary)', margin: 0 }}>
+                      Aún no has registrado familiares con número de teléfono.
+                    </p>
+                    <p style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)', marginTop: '6px' }}>
+                      Puedes añadirlos cómodamente desde el panel de administración (/admin) en la sección "Contactos Familiares y Emergencias".
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    {contacts.filter(c => !c.is_emergency).map((contact, idx) => (
+                      <div
+                        key={contact.id}
+                        className="glass-card"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '14px 18px',
+                          gap: '14px',
+                          background: 'rgba(255, 255, 255, 0.04)',
+                          border: '1px solid var(--glass-border)'
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                          <div style={{
+                            width: '48px',
+                            height: '48px',
+                            borderRadius: '50%',
+                            background: getAvatarGradient(contact.name, idx),
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            fontSize: '1.4rem',
+                            fontWeight: 700,
+                            color: '#ffffff',
+                            flexShrink: 0
+                          }}>
+                            {contact.name.charAt(0)}
+                          </div>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              <span style={{ fontSize: '1.25rem', fontWeight: 700, color: '#ffffff' }}>{contact.name}</span>
+                              {contact.relationship && (
+                                <span className="badge badge-info" style={{ fontSize: '0.8rem', padding: '2px 8px' }}>
+                                  {contact.relationship}
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '1.05rem', color: 'var(--color-text-secondary)', fontWeight: 600, marginTop: '2px' }}>
+                              📞 {contact.phone}
+                            </div>
+                          </div>
+                        </div>
+
+                        <a
+                          href={`tel:${contact.phone}`}
+                          className="btn btn-success"
+                          style={{
+                            height: '52px',
+                            padding: '0 24px',
+                            fontSize: '1.15rem',
+                            fontWeight: 700,
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '8px',
+                            textDecoration: 'none',
+                            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.35)',
+                            borderRadius: 'var(--radius-md)'
+                          }}
+                        >
+                          <Phone size={22} />
+                          <span>Llamar</span>
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Botón inferior Cerrar */}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowContactsModal(false)}
+                  className="btn btn-secondary"
+                  style={{ padding: '12px 28px', fontSize: '1.05rem', fontWeight: 700 }}
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* MODAL VISOR DE FOTO A PANTALLA COMPLETA */}
+        {fullscreenPhoto && (
+          <div
+            onClick={() => setFullscreenPhoto(null)}
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.95)',
+              backdropFilter: 'blur(10px)',
+              display: 'flex',
+              flexDirection: 'column',
               alignItems: 'center',
-              gap: '6px',
-              padding: '8px 14px',
-              borderRadius: 'var(--radius-sm)'
+              justifyContent: 'center',
+              zIndex: 2500,
+              padding: '24px'
             }}
           >
-            <Lock size={15} />
-            <span>Desvincular / Cambiar de Familia</span>
-          </button>
-        </div>
+            {/* Botón cerrar arriba a la derecha */}
+            <button
+              type="button"
+              onClick={() => setFullscreenPhoto(null)}
+              style={{
+                position: 'absolute',
+                top: '20px',
+                right: '24px',
+                background: 'rgba(255, 255, 255, 0.15)',
+                border: '1px solid rgba(255, 255, 255, 0.3)',
+                color: '#ffffff',
+                borderRadius: '50%',
+                width: '52px',
+                height: '52px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                zIndex: 2600
+              }}
+              title="Cerrar foto"
+            >
+              <X size={32} />
+            </button>
+
+            {/* Imagen a pantalla completa */}
+            <div
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                position: 'relative',
+                maxWidth: '92vw',
+                maxHeight: '82vh',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <img
+                src={fullscreenPhoto.image_url}
+                alt={fullscreenPhoto.caption || 'Foto familiar'}
+                style={{
+                  maxWidth: '92vw',
+                  maxHeight: '78vh',
+                  objectFit: 'contain',
+                  borderRadius: 'var(--radius-lg)',
+                  boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8)',
+                  border: '2px solid rgba(255, 255, 255, 0.15)'
+                }}
+              />
+
+              {fullscreenPhoto.caption && (
+                <div style={{
+                  marginTop: '16px',
+                  padding: '10px 24px',
+                  background: 'rgba(0, 0, 0, 0.75)',
+                  border: '1px solid rgba(255, 255, 255, 0.2)',
+                  borderRadius: 'var(--radius-md)',
+                  color: '#ffffff',
+                  fontSize: '1.4rem',
+                  fontWeight: 700,
+                  textAlign: 'center',
+                  backdropFilter: 'blur(6px)'
+                }}>
+                  ❤️ {fullscreenPhoto.caption}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </main>
     );
   }
@@ -1257,9 +1780,31 @@ function getAvatarGradient(name: string, index: number) {
           </div>
         </div>
 
-        {/* Reloj y Fecha gigante para accesibilidad */}
-        {/* Reloj, Fecha gigante y botón de refresco manual */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px', textAlign: 'right' }}>
+        {/* Reloj, Fecha gigante y botones de acción */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', textAlign: 'right', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => setShowContactsModal(true)}
+            className="btn"
+            style={{
+              padding: '10px 18px',
+              fontSize: '1rem',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(245, 158, 11, 0.2) 100%)',
+              border: '2px solid var(--color-error)',
+              color: '#ffffff',
+              borderRadius: 'var(--radius-lg)',
+              boxShadow: '0 4px 15px rgba(239, 68, 68, 0.25)',
+              cursor: 'pointer'
+            }}
+          >
+            <PhoneCall size={20} color="#f87171" />
+            <span>📞 Contactos / Ayuda SOS</span>
+          </button>
+
           <button
             onClick={() => loadParentData(selectedParent.id)}
             className="btn btn-secondary"
@@ -1361,15 +1906,10 @@ function getAvatarGradient(name: string, index: number) {
             )}
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', flex: 1, overflowY: 'auto', minHeight: 0, paddingRight: '6px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', flex: 1, overflowY: 'auto', minHeight: 0, paddingRight: '4px' }}>
             {medications.length === 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '12px', padding: '40px 20px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
                 <Pill size={48} strokeWidth={1} />
-                <p style={{ fontSize: '1.25rem' }}>No hay medicamentos activos cargados</p>
-              </div>
-            ) : medications.filter(m => !isPrnMedication(m) && isScheduledForToday(m)).length === 0 && medications.filter(m => isPrnMedication(m)).length === 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', flex: 1, gap: '12px', padding: '40px 20px', textAlign: 'center', color: 'var(--color-text-muted)' }}>
-                <Calendar size={48} strokeWidth={1} />
                 <p style={{ fontSize: '1.25rem', color: 'var(--color-text-primary)', fontWeight: 700 }}>Hoy no tienes medicamentos programados</p>
                 <p style={{ fontSize: '1rem', color: 'var(--color-text-secondary)' }}>Tus pautas de medicación no tienen tomas programadas para el día de hoy.</p>
               </div>
@@ -1673,6 +2213,351 @@ function getAvatarGradient(name: string, index: number) {
         </section>
 
       </div>
+
+      {/* MODAL DIRECTO DE CONTACTOS FAMILIARES Y EMERGENCIAS SOS */}
+      {showContactsModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.85)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 2000,
+          padding: '20px'
+        }}>
+          <div className="glass-panel" style={{
+            width: '100%',
+            maxWidth: '760px',
+            maxHeight: '92vh',
+            overflowY: 'auto',
+            padding: '28px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '20px',
+            background: '#0a1020',
+            border: '2px solid rgba(239, 68, 68, 0.4)',
+            borderRadius: 'var(--radius-xl)',
+            boxShadow: '0 20px 50px rgba(0, 0, 0, 0.6)'
+          }}>
+            {/* Cabecera */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--glass-border)', paddingBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: 'rgba(239, 68, 68, 0.2)', padding: '10px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <PhoneCall size={28} color="#ef4444" />
+                </div>
+                <div>
+                  <h2 style={{ fontSize: '1.6rem', fontWeight: 800, margin: 0, color: '#ffffff' }}>Directorio Familiar y Emergencias</h2>
+                  <p style={{ fontSize: '0.95rem', color: 'var(--color-text-secondary)', margin: '2px 0 0 0' }}>Toca cualquier botón verde para llamar inmediatamente</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowContactsModal(false)}
+                style={{
+                  background: 'rgba(255, 255, 255, 0.08)',
+                  border: '1px solid var(--glass-border)',
+                  color: '#ffffff',
+                  borderRadius: '50%',
+                  width: '44px',
+                  height: '44px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* SECCIÓN 1: NÚMEROS DE EMERGENCIA (112 y 061 siempre disponibles + SOS personalizados) */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ShieldAlert size={20} color="#ef4444" />
+                <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#f87171', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Emergencias Inmediatas (SOS)
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px' }}>
+                {/* 112 Emergencias */}
+                <a
+                  href="tel:112"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '16px 20px',
+                    background: 'linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)',
+                    color: '#ffffff',
+                    borderRadius: 'var(--radius-lg)',
+                    textDecoration: 'none',
+                    boxShadow: '0 4px 15px rgba(220, 38, 38, 0.4)',
+                    fontWeight: 800,
+                    transition: 'transform 0.1s ease'
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: '1.8rem', lineHeight: 1 }}>112</div>
+                    <div style={{ fontSize: '0.9rem', opacity: 0.9, marginTop: '2px' }}>Emergencias Generales</div>
+                  </div>
+                  <Phone size={28} />
+                </a>
+
+                {/* 061 Urgencias Sanitarias */}
+                <a
+                  href="tel:061"
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '16px 20px',
+                    background: 'linear-gradient(135deg, #ea580c 0%, #c2410c 100%)',
+                    color: '#ffffff',
+                    borderRadius: 'var(--radius-lg)',
+                    textDecoration: 'none',
+                    boxShadow: '0 4px 15px rgba(234, 88, 12, 0.4)',
+                    fontWeight: 800,
+                    transition: 'transform 0.1s ease'
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: '1.8rem', lineHeight: 1 }}>061</div>
+                    <div style={{ fontSize: '0.9rem', opacity: 0.9, marginTop: '2px' }}>Urgencias Sanitarias</div>
+                  </div>
+                  <Phone size={28} />
+                </a>
+
+                {/* Contactos marcados como SOS en la base de datos */}
+                {contacts.filter(c => c.is_emergency).map(contact => (
+                  <a
+                    key={contact.id}
+                    href={`tel:${contact.phone}`}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      padding: '16px 20px',
+                      background: 'linear-gradient(135deg, #b91c1c 0%, #991b1b 100%)',
+                      color: '#ffffff',
+                      borderRadius: 'var(--radius-lg)',
+                      textDecoration: 'none',
+                      boxShadow: '0 4px 15px rgba(185, 28, 28, 0.4)',
+                      fontWeight: 800
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: '1.25rem', lineHeight: 1.2 }}>{contact.name}</div>
+                      <div style={{ fontSize: '0.85rem', opacity: 0.9, marginTop: '2px' }}>
+                        {contact.relationship || 'Emergencia'} • {contact.phone}
+                      </div>
+                    </div>
+                    <Phone size={26} />
+                  </a>
+                ))}
+              </div>
+            </div>
+
+            {/* SECCIÓN 2: CONTACTOS FAMILIARES Y CUIDADORES */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '10px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <User size={20} color="var(--color-info)" />
+                <span style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--color-info)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                  Familiares y Cuidadores
+                </span>
+              </div>
+
+              {contacts.filter(c => !c.is_emergency).length === 0 && contacts.filter(c => c.is_emergency).length === 0 ? (
+                <div style={{ padding: '24px', textAlign: 'center', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-md)', border: '1px solid var(--glass-border)' }}>
+                  <p style={{ fontSize: '1.1rem', color: 'var(--color-text-secondary)', margin: 0 }}>
+                    Aún no has registrado familiares con número de teléfono.
+                  </p>
+                  <p style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)', marginTop: '6px' }}>
+                    Puedes añadirlos cómodamente desde el panel de administración (/admin) en la sección "Contactos Familiares y Emergencias".
+                  </p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {contacts.filter(c => !c.is_emergency).map((contact, idx) => (
+                    <div
+                      key={contact.id}
+                      className="glass-card"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '14px 18px',
+                        gap: '14px',
+                        background: 'rgba(255, 255, 255, 0.04)',
+                        border: '1px solid var(--glass-border)'
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                        <div style={{
+                          width: '48px',
+                          height: '48px',
+                          borderRadius: '50%',
+                          background: getAvatarGradient(contact.name, idx),
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '1.4rem',
+                          fontWeight: 700,
+                          color: '#ffffff',
+                          flexShrink: 0
+                        }}>
+                          {contact.name.charAt(0)}
+                        </div>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '1.25rem', fontWeight: 700, color: '#ffffff' }}>{contact.name}</span>
+                            {contact.relationship && (
+                              <span className="badge badge-info" style={{ fontSize: '0.8rem', padding: '2px 8px' }}>
+                                {contact.relationship}
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '1.05rem', color: 'var(--color-text-secondary)', fontWeight: 600, marginTop: '2px' }}>
+                            📞 {contact.phone}
+                          </div>
+                        </div>
+                      </div>
+
+                      <a
+                        href={`tel:${contact.phone}`}
+                        className="btn btn-success"
+                        style={{
+                          height: '52px',
+                          padding: '0 24px',
+                          fontSize: '1.15rem',
+                          fontWeight: 700,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '8px',
+                          textDecoration: 'none',
+                          boxShadow: '0 4px 12px rgba(16, 185, 129, 0.35)',
+                          borderRadius: 'var(--radius-md)'
+                        }}
+                      >
+                        <Phone size={22} />
+                        <span>Llamar</span>
+                      </a>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Botón inferior Cerrar */}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+              <button
+                type="button"
+                onClick={() => setShowContactsModal(false)}
+                className="btn btn-secondary"
+                style={{ padding: '12px 28px', fontSize: '1.05rem', fontWeight: 700 }}
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL VISOR DE FOTO A PANTALLA COMPLETA */}
+      {fullscreenPhoto && (
+        <div
+          onClick={() => setFullscreenPhoto(null)}
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.95)',
+            backdropFilter: 'blur(10px)',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2500,
+            padding: '24px'
+          }}
+        >
+          {/* Botón cerrar arriba a la derecha */}
+          <button
+            type="button"
+            onClick={() => setFullscreenPhoto(null)}
+            style={{
+              position: 'absolute',
+              top: '20px',
+              right: '24px',
+              background: 'rgba(255, 255, 255, 0.15)',
+              border: '1px solid rgba(255, 255, 255, 0.3)',
+              color: '#ffffff',
+              borderRadius: '50%',
+              width: '52px',
+              height: '52px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              zIndex: 2600
+            }}
+            title="Cerrar foto"
+          >
+            <X size={32} />
+          </button>
+
+          {/* Imagen a pantalla completa */}
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: 'relative',
+              maxWidth: '92vw',
+              maxHeight: '82vh',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center'
+            }}
+          >
+            <img
+              src={fullscreenPhoto.image_url}
+              alt={fullscreenPhoto.caption || 'Foto familiar'}
+              style={{
+                maxWidth: '92vw',
+                maxHeight: '78vh',
+                objectFit: 'contain',
+                borderRadius: 'var(--radius-lg)',
+                boxShadow: '0 20px 60px rgba(0, 0, 0, 0.8)',
+                border: '2px solid rgba(255, 255, 255, 0.15)'
+              }}
+            />
+
+            {fullscreenPhoto.caption && (
+              <div style={{
+                marginTop: '16px',
+                padding: '10px 24px',
+                background: 'rgba(0, 0, 0, 0.75)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: 'var(--radius-md)',
+                color: '#ffffff',
+                fontSize: '1.4rem',
+                fontWeight: 700,
+                textAlign: 'center',
+                backdropFilter: 'blur(6px)'
+              }}>
+                ❤️ {fullscreenPhoto.caption}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <style jsx global>{`
         @keyframes pulse-notice {
