@@ -230,6 +230,11 @@ create policy "Admin: gestión de tomas de medicación" on public.medication_log
         where a.user_id = auth.uid()
     ));
 
+-- Permitir que las tablets reciban las notificaciones de tomas en tiempo real
+create policy "Tablet: consultar tomas de medicación para realtime" on public.medication_logs
+    for select to anon
+    using (true);
+
 -- 9. Habilitar Supabase Realtime para sincronización en tiempo real
 alter publication supabase_realtime add table public.notices;
 alter publication supabase_realtime add table public.medications;
