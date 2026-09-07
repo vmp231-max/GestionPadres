@@ -83,11 +83,12 @@ export async function GET(req: NextRequest) {
         );
       }
 
-      // Citas desde el inicio del día actual (00:00)
+      // Citas desde el inicio del día actual (00:00) y tomas de hoy
       const todayStart = new Date();
       todayStart.setHours(0, 0, 0, 0);
+      const todayDateStr = new Date().toISOString().split('T')[0];
 
-      const [apptsRes, medsRes, noticesRes] = await Promise.all([
+      const [apptsRes, medsRes, noticesRes, logsRes] = await Promise.all([
         supabase
           .from('appointments')
           .select('*')
@@ -106,6 +107,11 @@ export async function GET(req: NextRequest) {
           .eq('is_read', false)
           .or(`parent_id.eq.${parentId},parent_id.is.null`)
           .order('created_at', { ascending: false }),
+        supabase
+          .from('medication_logs')
+          .select('medication_id, taken_at')
+          .eq('parent_id', parentId)
+          .eq('taken_date', todayDateStr),
       ]);
 
       if (apptsRes.error) throw apptsRes.error;
@@ -115,6 +121,23 @@ export async function GET(req: NextRequest) {
       appointments = apptsRes.data || [];
       medications = medsRes.data || [];
       notices = noticesRes.data || [];
+
+      // Si medication_logs aún no existe o falla, continuar gracefully
+      const logs = logsRes.data || [];
+      const takenMeds = logs.map((l: any) => l.medication_id);
+      const takenLogs = logs;
+
+      return NextResponse.json({
+        account: accRes.data,
+        parents,
+        photos,
+        contacts,
+        appointments,
+        medications,
+        notices,
+        takenMeds,
+        takenLogs,
+      });
     }
 
     return NextResponse.json({
@@ -122,7 +145,6 @@ export async function GET(req: NextRequest) {
       parents,
       photos,
       contacts,
-      ...(parentId ? { appointments, medications, notices } : {}),
     });
   } catch (err: any) {
     console.error('Error en /api/tablet/data:', err);

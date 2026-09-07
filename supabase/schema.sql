@@ -204,9 +204,37 @@ create policy "Admin: gestión de contactos de emergencia" on public.emergency_c
     using (account_id in (select id from public.accounts where user_id = auth.uid()))
     with check (account_id in (select id from public.accounts where user_id = auth.uid()));
 
+-- 8. Tabla de Registro Diario de Tomas de Medicamentos (Sincronización Multi-Dispositivo)
+create table if not exists public.medication_logs (
+    id uuid default gen_random_uuid() primary key,
+    parent_id uuid references public.parents(id) on delete cascade not null,
+    medication_id uuid references public.medications(id) on delete cascade not null,
+    taken_date date default current_date not null,
+    taken_at timestamp with time zone default timezone('utc'::text, now()) not null,
+    constraint unique_med_intake_per_day unique (medication_id, taken_date)
+);
+
+alter table public.medication_logs enable row level security;
+
+-- POLÍTICAS PARA MEDICATION_LOGS
+create policy "Admin: gestión de tomas de medicación" on public.medication_logs
+    for all to authenticated
+    using (parent_id in (
+        select p.id from public.parents p
+        join public.accounts a on p.account_id = a.id
+        where a.user_id = auth.uid()
+    ))
+    with check (parent_id in (
+        select p.id from public.parents p
+        join public.accounts a on p.account_id = a.id
+        where a.user_id = auth.uid()
+    ));
+
 -- 9. Habilitar Supabase Realtime para sincronización en tiempo real
 alter publication supabase_realtime add table public.notices;
 alter publication supabase_realtime add table public.medications;
 alter publication supabase_realtime add table public.appointments;
 alter publication supabase_realtime add table public.family_photos;
 alter publication supabase_realtime add table public.emergency_contacts;
+alter publication supabase_realtime add table public.medication_logs;
+

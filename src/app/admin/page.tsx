@@ -261,6 +261,7 @@ export default function AdminPortal() {
   
   // Medicamentos
   const [activeMeds, setActiveMeds] = useState<any[]>([]);
+  const [todayIntakes, setTodayIntakes] = useState<any[]>([]);
   const [parsedMeds, setParsedMeds] = useState<Medication[]>([]);
   const [isParsing, setIsParsing] = useState(false);
   const [pdfFile, setPdfFile] = useState<File | null>(null);
@@ -387,16 +388,26 @@ export default function AdminPortal() {
         : (parentsData?.[0]?.id || '');
       setSelectedParentId(activeParentId);
 
-      // Cargar medicamentos activos del familiar seleccionado
+      // Cargar medicamentos activos y tomas de hoy del familiar seleccionado
       if (activeParentId) {
-        const { data: medsData } = await supabase
-          .from('medications')
-          .select('*')
-          .eq('parent_id', activeParentId)
-          .eq('active', true);
-        setActiveMeds(medsData || []);
+        const todayDateStr = new Date().toISOString().split('T')[0];
+        const [medsRes, logsRes] = await Promise.all([
+          supabase
+            .from('medications')
+            .select('*')
+            .eq('parent_id', activeParentId)
+            .eq('active', true),
+          supabase
+            .from('medication_logs')
+            .select('*')
+            .eq('parent_id', activeParentId)
+            .eq('taken_date', todayDateStr),
+        ]);
+        setActiveMeds(medsRes.data || []);
+        setTodayIntakes(logsRes.data || []);
       } else {
         setActiveMeds([]);
+        setTodayIntakes([]);
       }
 
       // Cargar avisos asociados a esta cuenta o sus familiares
@@ -455,19 +466,54 @@ export default function AdminPortal() {
     }
   }, [session, loadAdminData]);
 
-  // Recargar medicamentos cuando cambie el padre seleccionado
+  // Recargar medicamentos y tomas cuando cambie el padre seleccionado (con suscripción Realtime)
   useEffect(() => {
     if (session && selectedParentId) {
-      supabase
-        .from('medications')
-        .select('*')
-        .eq('parent_id', selectedParentId)
-        .eq('active', true)
-        .then(({ data }) => {
-          setActiveMeds(data || []);
+      const todayDateStr = new Date().toISOString().split('T')[0];
+
+      const fetchMedsAndLogs = () => {
+        Promise.all([
+          supabase
+            .from('medications')
+            .select('*')
+            .eq('parent_id', selectedParentId)
+            .eq('active', true),
+          supabase
+            .from('medication_logs')
+            .select('*')
+            .eq('parent_id', selectedParentId)
+            .eq('taken_date', todayDateStr),
+        ]).then(([medsRes, logsRes]) => {
+          setActiveMeds(medsRes.data || []);
+          setTodayIntakes(logsRes.data || []);
         });
+      };
+
+      fetchMedsAndLogs();
+
+      // Suscripción Realtime para actualizar al instante cuando la tablet marque una toma
+      const channel = supabase
+        .channel(`admin-med-logs-${selectedParentId}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'medication_logs' },
+          () => {
+            supabase
+              .from('medication_logs')
+              .select('*')
+              .eq('parent_id', selectedParentId)
+              .eq('taken_date', todayDateStr)
+              .then(({ data }) => setTodayIntakes(data || []));
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
     } else {
       setActiveMeds([]);
+      setTodayIntakes([]);
     }
   }, [selectedParentId, session]);
 
@@ -816,6 +862,40 @@ export default function AdminPortal() {
       setActiveMeds(prev => prev.filter(m => m.id !== medId));
     } catch (err: any) {
       alert(`Error al desactivar: ${err.message || err}`);
+    }
+  };
+
+  const toggleAdminMedTaken = async (medId: string) => {
+    if (!selectedParentId) return;
+    const todayDateStr = new Date().toISOString().split('T')[0];
+    const existing = todayIntakes.find(i => i.medication_id === medId);
+
+    try {
+      if (existing) {
+        const { error } = await supabase
+          .from('medication_logs')
+          .delete()
+          .eq('id', existing.id);
+        if (error) throw error;
+        setTodayIntakes(prev => prev.filter(i => i.id !== existing.id));
+      } else {
+        const { data, error } = await supabase
+          .from('medication_logs')
+          .insert([{
+            parent_id: selectedParentId,
+            medication_id: medId,
+            taken_date: todayDateStr,
+            taken_at: new Date().toISOString(),
+          }])
+          .select()
+          .maybeSingle();
+        if (error) throw error;
+        if (data) {
+          setTodayIntakes(prev => [...prev, data]);
+        }
+      }
+    } catch (err: any) {
+      alert(`Error al actualizar estado de la toma: ${err.message || err}`);
     }
   };
 
@@ -2211,6 +2291,58 @@ export default function AdminPortal() {
                             }}>
                               {getScheduleDescription(med)}
                             </span>
+                            {(() => {
+                              const intake = todayIntakes.find(i => i.medication_id === med.id);
+                              if (intake) {
+                                const timeStr = new Date(intake.taken_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleAdminMedTaken(med.id)}
+                                    title="Pulsar para desmarcar toma"
+                                    style={{
+                                      fontSize: '0.75rem',
+                                      fontWeight: 700,
+                                      padding: '2px 8px',
+                                      borderRadius: '10px',
+                                      background: 'rgba(34, 197, 94, 0.18)',
+                                      color: '#4ade80',
+                                      border: '1px solid rgba(34, 197, 94, 0.4)',
+                                      display: 'inline-flex',
+                                      alignItems: 'center',
+                                      gap: '4px',
+                                      cursor: 'pointer',
+                                    }}
+                                  >
+                                    <Check size={12} />
+                                    <span>Tomada hoy ({timeStr})</span>
+                                  </button>
+                                );
+                              }
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleAdminMedTaken(med.id)}
+                                  title="Pulsar para marcar como tomada"
+                                  style={{
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    padding: '2px 8px',
+                                    borderRadius: '10px',
+                                    background: 'rgba(148, 163, 184, 0.1)',
+                                    color: '#94a3b8',
+                                    border: '1px solid rgba(148, 163, 184, 0.25)',
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: '4px',
+                                    cursor: 'pointer',
+                                  }}
+                                >
+                                  <Clock size={12} />
+                                  <span>Pendiente hoy</span>
+                                </button>
+                              );
+                            })()}
                           </div>
                           <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem', marginTop: '3px' }}>
                             Dosis: <strong>{med.dose || 'No especificada'}</strong> | Frecuencia: <strong>{med.frequency || 'No especificada'}</strong>

@@ -435,7 +435,7 @@ export default function TabletDashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  // 3. Control de tomas de medicamentos (Reset diario con localStorage)
+  // 3. Control de tomas de medicamentos (Sincronizado con Supabase y caché localStorage)
   useEffect(() => {
     if (!selectedParent) return;
     
@@ -444,26 +444,24 @@ export default function TabletDashboard() {
     const stored = localStorage.getItem(storageKey);
     
     if (stored) {
-      setTakenMeds(JSON.parse(stored));
+      try {
+        setTakenMeds(JSON.parse(stored));
+      } catch (e) {
+        setTakenMeds([]);
+      }
     } else {
-      // Limpiar localStorages viejos del mismo padre para no llenar memoria
-      Object.keys(localStorage).forEach(key => {
-        if (key.startsWith(`taken_meds_${selectedParent.id}_`)) {
-          localStorage.removeItem(key);
-        }
-      });
       setTakenMeds([]);
     }
   }, [selectedParent]);
 
-  const toggleMedTaken = (medId: string) => {
+  const toggleMedTaken = async (medId: string) => {
     if (!selectedParent) return;
     
-    const today = new Date().toDateString();
-    const storageKey = `taken_meds_${selectedParent.id}_${today}`;
-    
+    const isCurrentlyTaken = takenMeds.includes(medId);
+    const willBeTaken = !isCurrentlyTaken;
+
     let newTaken: string[];
-    if (takenMeds.includes(medId)) {
+    if (isCurrentlyTaken) {
       newTaken = takenMeds.filter(id => id !== medId);
     } else {
       newTaken = [...takenMeds, medId];
@@ -484,8 +482,35 @@ export default function TabletDashboard() {
       }
     }
     
+    // 1. Actualización optimista instantánea
     setTakenMeds(newTaken);
-    localStorage.setItem(storageKey, JSON.stringify(newTaken));
+    const today = new Date().toDateString();
+    const storageKey = `taken_meds_${selectedParent.id}_${today}`;
+    try {
+      localStorage.setItem(storageKey, JSON.stringify(newTaken));
+    } catch (e) {}
+
+    // 2. Persistencia en la base de datos para sincronización en tiempo real
+    const token = getTabletToken();
+    if (token) {
+      try {
+        await fetch('/api/tablet/actions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-tablet-token': token,
+          },
+          body: JSON.stringify({
+            action: 'toggle_medication_taken',
+            medicationId: medId,
+            parentId: selectedParent.id,
+            taken: willBeTaken,
+          }),
+        });
+      } catch (err) {
+        console.error('Error al persistir toma de medicamento en el servidor:', err);
+      }
+    }
   };
 
   // 4. Lector de voz para los Avisos (Text-To-Speech)
@@ -509,7 +534,7 @@ export default function TabletDashboard() {
     }
   }, []);
 
-  // 5. Cargar datos específicos de un padre (Citas, Medicamentos, Avisos Vía API Segura HMAC)
+  // 5. Cargar datos específicos de un padre (Citas, Medicamentos, Tomas, Avisos Vía API Segura HMAC)
   const loadParentData = useCallback(async (parentId: string) => {
     const token = getTabletToken();
     if (!token) return;
@@ -524,6 +549,14 @@ export default function TabletDashboard() {
       setAppointments(data.appointments || []);
       setMedications(data.medications || []);
       setNotices(data.notices || []);
+      
+      if (Array.isArray(data.takenMeds)) {
+        setTakenMeds(data.takenMeds);
+        const today = new Date().toDateString();
+        try {
+          localStorage.setItem(`taken_meds_${parentId}_${today}`, JSON.stringify(data.takenMeds));
+        } catch (e) {}
+      }
     } catch (err) {
       console.error('Error al cargar datos del dashboard:', err);
     }
@@ -571,6 +604,14 @@ export default function TabletDashboard() {
         { event: '*', schema: 'public', table: 'appointments' },
         () => {
           console.log('[Realtime] Cambio detectado en citas');
+          loadParentData(selectedParent.id);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'medication_logs' },
+        () => {
+          console.log('[Realtime] Cambio detectado en tomas de medicamentos');
           loadParentData(selectedParent.id);
         }
       )

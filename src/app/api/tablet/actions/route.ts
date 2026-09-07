@@ -79,6 +79,57 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true });
     }
 
+    if (action === 'toggle_medication_taken') {
+      const { medicationId, parentId, taken } = body;
+      if (!medicationId || !parentId) {
+        return NextResponse.json(
+          { error: 'Parámetros incompletos (medicationId y parentId requeridos).' },
+          { status: 400 }
+        );
+      }
+
+      // Verificar que el familiar pertenezca a la cuenta del token
+      const { data: parentCheck } = await supabase
+        .from('parents')
+        .select('id')
+        .eq('id', parentId)
+        .eq('account_id', accountId)
+        .maybeSingle();
+
+      if (!parentCheck) {
+        return NextResponse.json(
+          { error: 'El familiar no pertenece a esta cuenta.' },
+          { status: 403 }
+        );
+      }
+
+      const todayDateStr = new Date().toISOString().split('T')[0];
+
+      if (taken) {
+        const { error } = await supabase
+          .from('medication_logs')
+          .upsert(
+            {
+              parent_id: parentId,
+              medication_id: medicationId,
+              taken_date: todayDateStr,
+              taken_at: new Date().toISOString(),
+            },
+            { onConflict: 'medication_id,taken_date' }
+          );
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('medication_logs')
+          .delete()
+          .eq('medication_id', medicationId)
+          .eq('taken_date', todayDateStr);
+        if (error) throw error;
+      }
+
+      return NextResponse.json({ success: true, taken });
+    }
+
     return NextResponse.json(
       { error: `Acción '${action}' no soportada.` },
       { status: 400 }
