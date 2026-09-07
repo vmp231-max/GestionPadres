@@ -91,6 +91,7 @@ interface Medication {
   schedule_days?: string;
   comments?: string;
   active: boolean;
+  order_num?: number;
   created_at?: string;
 }
 
@@ -769,7 +770,7 @@ export default function TabletDashboard() {
         return freq.includes('noche') || freq.includes('cena') || freq.includes('acostar') || freq.includes('dormir') || freq.includes('20h') || freq.includes('21h') || freq.includes('22h');
       }
       return false;
-    });
+    }).sort((a, b) => ((a.order_num ?? 0) - (b.order_num ?? 0)) || a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
   };
 
   const getNoticeStyle = (type: string) => {
@@ -2154,7 +2155,7 @@ function getAvatarGradient(name: string, index: number) {
                 </h3>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {medications.filter(m => isPrnMedication(m)).map(med => {
+                  {medications.filter(m => isPrnMedication(m)).sort((a, b) => ((a.order_num ?? 0) - (b.order_num ?? 0)) || a.name.localeCompare(b.name, 'es', { sensitivity: 'base' })).map(med => {
                     const isTaken = takenMeds.includes(med.id);
                     return (
                       <div

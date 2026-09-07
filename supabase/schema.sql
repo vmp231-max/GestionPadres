@@ -34,6 +34,7 @@ create table if not exists public.medications (
     schedule_type text default 'diario' not null,
     schedule_days text default '' not null,
     comments text,
+    order_num integer default 0 not null,
     active boolean default true not null,
     created_at timestamp with time zone default timezone('utc'::text, now()) not null,
     updated_at timestamp with time zone default timezone('utc'::text, now()) not null

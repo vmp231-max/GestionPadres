@@ -99,7 +99,9 @@ export async function GET(req: NextRequest) {
           .from('medications')
           .select('*')
           .eq('parent_id', parentId)
-          .eq('active', true),
+          .eq('active', true)
+          .order('order_num', { ascending: true })
+          .order('name', { ascending: true }),
         supabase
           .from('notices')
           .select('*')

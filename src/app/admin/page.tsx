@@ -27,7 +27,9 @@ import {
   Users,
   Pencil,
   X,
-  User
+  User,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import { 
   ScheduleType, 
@@ -81,7 +83,27 @@ interface Medication {
   schedule_type?: ScheduleType | string;
   schedule_days?: string;
   comments?: string;
+  order_num?: number;
 }
+
+const PERIOD_ORDER_SECTIONS = [
+  { key: 'Mañana', label: '☀️ Mañana', color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.08)', border: 'rgba(245, 158, 11, 0.25)' },
+  { key: 'Mediodia', label: '🍽️ Mediodía', color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.08)', border: 'rgba(59, 130, 246, 0.25)' },
+  { key: 'Tarde', label: '⛅ Tarde', color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.08)', border: 'rgba(139, 92, 246, 0.25)' },
+  { key: 'Noche', label: '🌙 Noche', color: '#6366f1', bg: 'rgba(99, 102, 241, 0.08)', border: 'rgba(99, 102, 241, 0.25)' },
+  { key: 'Otro', label: '🆘 Si precisa / Otros', color: '#ec4899', bg: 'rgba(236, 72, 153, 0.08)', border: 'rgba(236, 72, 153, 0.25)' },
+] as const;
+
+function getMedPeriodGroupKey(period?: string | null): string {
+  if (!period) return 'Mañana';
+  const norm = period.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (norm.includes('manana') || norm.includes('desayuno')) return 'Mañana';
+  if (norm.includes('mediodia') || norm.includes('comida') || norm.includes('almuerzo')) return 'Mediodia';
+  if (norm.includes('tarde') || norm.includes('merienda')) return 'Tarde';
+  if (norm.includes('noche') || norm.includes('cena') || norm.includes('acostar')) return 'Noche';
+  return 'Otro';
+}
+
 
 interface Notice {
   id: string;
@@ -396,7 +418,9 @@ export default function AdminPortal() {
             .from('medications')
             .select('*')
             .eq('parent_id', activeParentId)
-            .eq('active', true),
+            .eq('active', true)
+            .order('order_num', { ascending: true })
+            .order('name', { ascending: true }),
           supabase
             .from('medication_logs')
             .select('*')
@@ -477,7 +501,9 @@ export default function AdminPortal() {
             .from('medications')
             .select('*')
             .eq('parent_id', selectedParentId)
-            .eq('active', true),
+            .eq('active', true)
+            .order('order_num', { ascending: true })
+            .order('name', { ascending: true }),
           supabase
             .from('medication_logs')
             .select('*')
@@ -896,6 +922,51 @@ export default function AdminPortal() {
       }
     } catch (err: any) {
       alert(`Error al actualizar estado de la toma: ${err.message || err}`);
+    }
+  };
+
+  // Reordenar medicamentos dentro del mismo momento del día (Subir / Bajar)
+  const moveMedicationOrder = async (medId: string, direction: 'up' | 'down') => {
+    const currentMed = activeMeds.find(m => m.id === medId);
+    if (!currentMed) return;
+
+    // Obtener clave del grupo según momento del día
+    const groupKey = getMedPeriodGroupKey(currentMed.period);
+    const periodMeds = activeMeds
+      .filter(m => getMedPeriodGroupKey(m.period) === groupKey)
+      .sort((a, b) => ((a.order_num ?? 0) - (b.order_num ?? 0)) || a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
+
+    const currentIndex = periodMeds.findIndex(m => m.id === medId);
+    if (currentIndex === -1) return;
+    if (direction === 'up' && currentIndex === 0) return;
+    if (direction === 'down' && currentIndex === periodMeds.length - 1) return;
+
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+
+    // Asegurar números secuenciales espaciados por 10 para garantizar persistencia limpia
+    const updatedList = periodMeds.map((m, idx) => ({
+      ...m,
+      order_num: idx * 10,
+    }));
+
+    // Intercambiar posiciones
+    const temp = updatedList[currentIndex].order_num;
+    updatedList[currentIndex].order_num = updatedList[targetIndex].order_num;
+    updatedList[targetIndex].order_num = temp;
+
+    // Actualización optimista local en el estado
+    const orderMap = new Map(updatedList.map(m => [m.id, m.order_num]));
+    setActiveMeds(prev => prev.map(m => orderMap.has(m.id) ? { ...m, order_num: orderMap.get(m.id)! } : m));
+
+    // Persistir en Supabase todos los de este grupo para garantizar orden sin colisiones
+    try {
+      await Promise.all(
+        updatedList.map(m =>
+          supabase.from('medications').update({ order_num: m.order_num }).eq('id', m.id)
+        )
+      );
+    } catch (err: any) {
+      console.error('Error al guardar nuevo orden de medicamentos:', err);
     }
   };
 
@@ -2160,220 +2231,300 @@ export default function AdminPortal() {
                 </form>
               )}
 
-              {/* Lista de medicamentos activos con modo lectura / edición */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxHeight: '450px', overflowY: 'auto', paddingRight: '4px' }}>
+              {/* Lista de medicamentos activos agrupados por momento del día con ordenación y modo lectura / edición */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxHeight: '500px', overflowY: 'auto', paddingRight: '4px' }}>
                 {parents.length === 0 ? (
                   <p style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem', fontStyle: 'italic', padding: '10px 0' }}>No hay familiares registrados. Añade un familiar arriba para comenzar a gestionar su medicación.</p>
                 ) : activeMeds.length === 0 ? (
                   <p style={{ color: 'var(--color-text-muted)', fontSize: '0.95rem', fontStyle: 'italic', padding: '10px 0' }}>No hay medicamentos activos cargados para este familiar.</p>
                 ) : (
-                  activeMeds.map(med => {
-                    const isEditing = editingMedId === med.id;
+                  PERIOD_ORDER_SECTIONS.map(section => {
+                    const groupMeds = activeMeds
+                      .filter(m => getMedPeriodGroupKey(m.period) === section.key)
+                      .sort((a, b) => ((a.order_num ?? 0) - (b.order_num ?? 0)) || a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
 
-                    if (isEditing) {
-                      return (
-                        <div key={med.id} className="glass-card" style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px', borderLeft: '4px solid var(--color-warning)', background: 'rgba(245, 158, 11, 0.04)' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <strong style={{ fontSize: '0.9rem', color: 'var(--color-warning)' }}>Editando: {med.name}</strong>
-                            <button type="button" onClick={cancelEditMed} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
-                              <X size={16} />
-                            </button>
-                          </div>
-
-                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Nombre</label>
-                              <input 
-                                type="text" 
-                                value={editForm.name} 
-                                onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
-                                style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
-                              />
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Dosis</label>
-                              <input 
-                                type="text" 
-                                value={editForm.dose} 
-                                onChange={(e) => setEditForm(prev => ({ ...prev, dose: e.target.value }))}
-                                style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
-                              />
-                            </div>
-                          </div>
-
-                          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Frecuencia (Texto)</label>
-                              <input 
-                                type="text" 
-                                value={editForm.frequency} 
-                                onChange={(e) => setEditForm(prev => ({ ...prev, frequency: e.target.value }))}
-                                style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
-                              />
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                              <label style={{ fontSize: '0.75rem', color: 'var(--color-info)' }}>Momento del Día</label>
-                              <select 
-                                value={editForm.period} 
-                                onChange={(e) => setEditForm(prev => ({ ...prev, period: e.target.value }))}
-                                style={{ padding: '6px 10px', background: '#0f172a', border: '1px solid var(--color-info)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
-                              >
-                                <option value="Mañana" style={{ background: '#0f172a' }}>☀️ Mañana</option>
-                                <option value="Mediodia" style={{ background: '#0f172a' }}>🍽️ Mediodía</option>
-                                <option value="Tarde" style={{ background: '#0f172a' }}>⛅ Tarde</option>
-                                <option value="Noche" style={{ background: '#0f172a' }}>🌙 Noche</option>
-                              </select>
-                            </div>
-                          </div>
-
-                          {/* Selector de Periodicidad / Pauta Flexible */}
-                          <ScheduleSelector
-                            scheduleType={editForm.schedule_type}
-                            scheduleDays={editForm.schedule_days}
-                            onChangeType={(t) => setEditForm(prev => ({ ...prev, schedule_type: t }))}
-                            onChangeDays={(d) => setEditForm(prev => ({ ...prev, schedule_days: d }))}
-                          />
-
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                            <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Comentarios / Avisos tomas</label>
-                            <input 
-                              type="text" 
-                              value={editForm.comments} 
-                              onChange={(e) => setEditForm(prev => ({ ...prev, comments: e.target.value }))}
-                              placeholder="ej. Tomar con las comidas"
-                              style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
-                            />
-                          </div>
-
-                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '4px' }}>
-                            <button type="button" onClick={cancelEditMed} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.85rem' }}>
-                              Cancelar
-                            </button>
-                            <button 
-                              type="button" 
-                              onClick={() => saveEditedMed(med.id)} 
-                              disabled={isSavingMed} 
-                              className="btn btn-success" 
-                              style={{ padding: '6px 14px', fontSize: '0.85rem', fontWeight: 700 }}
-                            >
-                              <Save size={14} />
-                              <span>{isSavingMed ? 'Guardando...' : 'Guardar Cambios'}</span>
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    }
+                    if (groupMeds.length === 0) return null;
 
                     return (
-                      <div key={med.id} className="glass-card" style={{ padding: '12px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', fontSize: '0.9rem' }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                            <strong style={{ fontSize: '1rem', color: 'var(--color-text-primary)' }}>{med.name}</strong>
-                            <span style={{ 
-                              fontSize: '0.75rem', 
-                              fontWeight: 700, 
-                              padding: '2px 8px', 
-                              borderRadius: '10px', 
-                              background: 'rgba(59, 130, 246, 0.15)', 
-                              color: '#60a5fa',
-                              border: '1px solid rgba(59, 130, 246, 0.3)'
-                            }}>
-                              {med.period === 'Mediodia' ? '🍽️ Mediodía' : med.period === 'Tarde' ? '⛅ Tarde' : med.period === 'Noche' ? '🌙 Noche' : '☀️ Mañana'}
-                            </span>
-                            <span style={{ 
-                              fontSize: '0.75rem', 
-                              fontWeight: 700, 
-                              padding: '2px 8px', 
-                              borderRadius: '10px', 
-                              background: 'rgba(6, 182, 212, 0.12)', 
-                              color: '#22d3ee',
-                              border: '1px solid rgba(6, 182, 212, 0.3)'
-                            }}>
-                              {getScheduleDescription(med)}
-                            </span>
-                            {(() => {
-                              const intake = todayIntakes.find(i => i.medication_id === med.id);
-                              if (intake) {
-                                const timeStr = new Date(intake.taken_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-                                return (
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleAdminMedTaken(med.id)}
-                                    title="Pulsar para desmarcar toma"
-                                    style={{
-                                      fontSize: '0.75rem',
-                                      fontWeight: 700,
-                                      padding: '2px 8px',
-                                      borderRadius: '10px',
-                                      background: 'rgba(34, 197, 94, 0.18)',
-                                      color: '#4ade80',
-                                      border: '1px solid rgba(34, 197, 94, 0.4)',
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '4px',
-                                      cursor: 'pointer',
-                                    }}
-                                  >
-                                    <Check size={12} />
-                                    <span>Tomada hoy ({timeStr})</span>
-                                  </button>
-                                );
-                              }
-                              return (
-                                <button
-                                  type="button"
-                                  onClick={() => toggleAdminMedTaken(med.id)}
-                                  title="Pulsar para marcar como tomada"
-                                  style={{
-                                    fontSize: '0.75rem',
-                                    fontWeight: 600,
-                                    padding: '2px 8px',
-                                    borderRadius: '10px',
-                                    background: 'rgba(148, 163, 184, 0.1)',
-                                    color: '#94a3b8',
-                                    border: '1px solid rgba(148, 163, 184, 0.25)',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                    cursor: 'pointer',
-                                  }}
-                                >
-                                  <Clock size={12} />
-                                  <span>Pendiente hoy</span>
-                                </button>
-                              );
-                            })()}
-                          </div>
-                          <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem', marginTop: '3px' }}>
-                            Dosis: <strong>{med.dose || 'No especificada'}</strong> | Frecuencia: <strong>{med.frequency || 'No especificada'}</strong>
-                          </div>
-                          {med.comments && (
-                            <div style={{ color: 'var(--color-warning)', fontSize: '0.8rem', marginTop: '3px' }}>
-                              💡 {med.comments}
-                            </div>
-                          )}
+                      <div key={section.key} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {/* Cabecera del Momento del Día */}
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          padding: '6px 12px',
+                          borderRadius: 'var(--radius-sm)',
+                          background: section.bg,
+                          border: `1px solid ${section.border}`,
+                        }}>
+                          <span style={{ fontWeight: 700, fontSize: '0.85rem', color: section.color }}>
+                            {section.label}
+                          </span>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
+                            {groupMeds.length} {groupMeds.length === 1 ? 'medicamento' : 'medicamentos'}
+                          </span>
                         </div>
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <button 
-                            type="button"
-                            onClick={() => startEditMed(med)} 
-                            className="btn btn-secondary" 
-                            style={{ padding: '6px 10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--color-info)' }}
-                            title="Editar este medicamento"
-                          >
-                            <Pencil size={14} />
-                            <span>Editar</span>
-                          </button>
-                          <button 
-                            type="button"
-                            onClick={() => deactivateSingleMed(med.id)} 
-                            className="btn" 
-                            style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--color-error)', border: 'none', padding: '6px 10px', fontSize: '0.8rem' }}
-                            title="Desactivar este medicamento de la tablet"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                        {/* Listado de medicamentos del grupo */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingLeft: '4px' }}>
+                          {groupMeds.map((med, idx) => {
+                            const isEditing = editingMedId === med.id;
+
+                            if (isEditing) {
+                              return (
+                                <div key={med.id} className="glass-card" style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px', borderLeft: '4px solid var(--color-warning)', background: 'rgba(245, 158, 11, 0.04)' }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <strong style={{ fontSize: '0.9rem', color: 'var(--color-warning)' }}>Editando: {med.name}</strong>
+                                    <button type="button" onClick={cancelEditMed} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--color-text-muted)' }}>
+                                      <X size={16} />
+                                    </button>
+                                  </div>
+
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                      <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Nombre</label>
+                                      <input 
+                                        type="text" 
+                                        value={editForm.name} 
+                                        onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                                        style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+                                      />
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                      <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Dosis</label>
+                                      <input 
+                                        type="text" 
+                                        value={editForm.dose} 
+                                        onChange={(e) => setEditForm(prev => ({ ...prev, dose: e.target.value }))}
+                                        style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+                                      />
+                                    </div>
+                                  </div>
+
+                                  <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px' }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                      <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Frecuencia (Texto)</label>
+                                      <input 
+                                        type="text" 
+                                        value={editForm.frequency} 
+                                        onChange={(e) => setEditForm(prev => ({ ...prev, frequency: e.target.value }))}
+                                        style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+                                      />
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                      <label style={{ fontSize: '0.75rem', color: 'var(--color-info)' }}>Momento del Día</label>
+                                      <select 
+                                        value={editForm.period} 
+                                        onChange={(e) => setEditForm(prev => ({ ...prev, period: e.target.value }))}
+                                        style={{ padding: '6px 10px', background: '#0f172a', border: '1px solid var(--color-info)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+                                      >
+                                        <option value="Mañana" style={{ background: '#0f172a' }}>☀️ Mañana</option>
+                                        <option value="Mediodia" style={{ background: '#0f172a' }}>🍽️ Mediodía</option>
+                                        <option value="Tarde" style={{ background: '#0f172a' }}>⛅ Tarde</option>
+                                        <option value="Noche" style={{ background: '#0f172a' }}>🌙 Noche</option>
+                                      </select>
+                                    </div>
+                                  </div>
+
+                                  {/* Selector de Periodicidad / Pauta Flexible */}
+                                  <ScheduleSelector
+                                    scheduleType={editForm.schedule_type}
+                                    scheduleDays={editForm.schedule_days}
+                                    onChangeType={(t) => setEditForm(prev => ({ ...prev, schedule_type: t }))}
+                                    onChangeDays={(d) => setEditForm(prev => ({ ...prev, schedule_days: d }))}
+                                  />
+
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    <label style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Comentarios / Avisos tomas</label>
+                                    <input 
+                                      type="text" 
+                                      value={editForm.comments} 
+                                      onChange={(e) => setEditForm(prev => ({ ...prev, comments: e.target.value }))}
+                                      placeholder="ej. Tomar con las comidas"
+                                      style={{ padding: '6px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)', borderRadius: 'var(--radius-sm)', color: '#ffffff', outline: 'none', fontSize: '0.85rem' }}
+                                    />
+                                  </div>
+
+                                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '4px' }}>
+                                    <button type="button" onClick={cancelEditMed} className="btn btn-secondary" style={{ padding: '6px 12px', fontSize: '0.85rem' }}>
+                                      Cancelar
+                                    </button>
+                                    <button 
+                                      type="button" 
+                                      onClick={() => saveEditedMed(med.id)} 
+                                      disabled={isSavingMed} 
+                                      className="btn btn-success" 
+                                      style={{ padding: '6px 14px', fontSize: '0.85rem', fontWeight: 700 }}
+                                    >
+                                      <Save size={14} />
+                                      <span>{isSavingMed ? 'Guardando...' : 'Guardar Cambios'}</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            }
+
+                            return (
+                              <div key={med.id} className="glass-card" style={{ padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', fontSize: '0.9rem' }}>
+                                {/* Botones para reordenar y badge de posición */}
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                                    <button
+                                      type="button"
+                                      disabled={idx === 0}
+                                      onClick={() => moveMedicationOrder(med.id, 'up')}
+                                      title="Subir posición en este momento"
+                                      style={{
+                                        background: idx === 0 ? 'transparent' : 'rgba(255,255,255,0.08)',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        padding: '3px 4px',
+                                        cursor: idx === 0 ? 'default' : 'pointer',
+                                        color: idx === 0 ? 'rgba(255,255,255,0.15)' : '#ffffff',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        transition: 'background 0.2s',
+                                      }}
+                                    >
+                                      <ArrowUp size={13} />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      disabled={idx === groupMeds.length - 1}
+                                      onClick={() => moveMedicationOrder(med.id, 'down')}
+                                      title="Bajar posición en este momento"
+                                      style={{
+                                        background: idx === groupMeds.length - 1 ? 'transparent' : 'rgba(255,255,255,0.08)',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        padding: '3px 4px',
+                                        cursor: idx === groupMeds.length - 1 ? 'default' : 'pointer',
+                                        color: idx === groupMeds.length - 1 ? 'rgba(255,255,255,0.15)' : '#ffffff',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        transition: 'background 0.2s',
+                                      }}
+                                    >
+                                      <ArrowDown size={13} />
+                                    </button>
+                                  </div>
+                                  <span style={{
+                                    fontSize: '0.75rem',
+                                    fontWeight: 700,
+                                    color: 'var(--color-text-muted)',
+                                    background: 'rgba(255,255,255,0.05)',
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    minWidth: '24px',
+                                    textAlign: 'center',
+                                  }}>
+                                    #{idx + 1}
+                                  </span>
+                                </div>
+
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                    <strong style={{ fontSize: '0.95rem', color: 'var(--color-text-primary)' }}>{med.name}</strong>
+                                    <span style={{ 
+                                      fontSize: '0.75rem', 
+                                      fontWeight: 700, 
+                                      padding: '2px 8px', 
+                                      borderRadius: '10px', 
+                                      background: 'rgba(6, 182, 212, 0.12)', 
+                                      color: '#22d3ee',
+                                      border: '1px solid rgba(6, 182, 212, 0.3)'
+                                    }}>
+                                      {getScheduleDescription(med)}
+                                    </span>
+                                    {(() => {
+                                      const intake = todayIntakes.find(i => i.medication_id === med.id);
+                                      if (intake) {
+                                        const timeStr = new Date(intake.taken_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+                                        return (
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleAdminMedTaken(med.id)}
+                                            title="Pulsar para desmarcar toma"
+                                            style={{
+                                              fontSize: '0.75rem',
+                                              fontWeight: 700,
+                                              padding: '2px 8px',
+                                              borderRadius: '10px',
+                                              background: 'rgba(34, 197, 94, 0.18)',
+                                              color: '#4ade80',
+                                              border: '1px solid rgba(34, 197, 94, 0.4)',
+                                              display: 'inline-flex',
+                                              alignItems: 'center',
+                                              gap: '4px',
+                                              cursor: 'pointer',
+                                            }}
+                                          >
+                                            <Check size={12} />
+                                            <span>Tomada hoy ({timeStr})</span>
+                                          </button>
+                                        );
+                                      }
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={() => toggleAdminMedTaken(med.id)}
+                                          title="Pulsar para marcar como tomada"
+                                          style={{
+                                            fontSize: '0.75rem',
+                                            fontWeight: 600,
+                                            padding: '2px 8px',
+                                            borderRadius: '10px',
+                                            background: 'rgba(148, 163, 184, 0.1)',
+                                            color: '#94a3b8',
+                                            border: '1px solid rgba(148, 163, 184, 0.25)',
+                                            display: 'inline-flex',
+                                            alignItems: 'center',
+                                            gap: '4px',
+                                            cursor: 'pointer',
+                                          }}
+                                        >
+                                          <Clock size={12} />
+                                          <span>Pendiente hoy</span>
+                                        </button>
+                                      );
+                                    })()}
+                                  </div>
+                                  <div style={{ color: 'var(--color-text-secondary)', fontSize: '0.85rem', marginTop: '3px' }}>
+                                    Dosis: <strong>{med.dose || 'No especificada'}</strong> | Frecuencia: <strong>{med.frequency || 'No especificada'}</strong>
+                                  </div>
+                                  {med.comments && (
+                                    <div style={{ color: 'var(--color-warning)', fontSize: '0.8rem', marginTop: '3px' }}>
+                                      💡 {med.comments}
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                  <button 
+                                    type="button"
+                                    onClick={() => startEditMed(med)} 
+                                    className="btn btn-secondary" 
+                                    style={{ padding: '6px 10px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--color-info)' }}
+                                    title="Editar este medicamento"
+                                  >
+                                    <Pencil size={14} />
+                                    <span>Editar</span>
+                                  </button>
+                                  <button 
+                                    type="button"
+                                    onClick={() => deactivateSingleMed(med.id)} 
+                                    className="btn" 
+                                    style={{ background: 'rgba(239, 68, 68, 0.1)', color: 'var(--color-error)', border: 'none', padding: '6px 10px', fontSize: '0.8rem' }}
+                                    title="Desactivar este medicamento de la tablet"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     );
