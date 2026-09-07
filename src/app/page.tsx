@@ -35,8 +35,7 @@ import {
 } from 'lucide-react';
 import { 
   isScheduledForToday, 
-  isPrnMedication, 
-  getScheduleDescription 
+  isPrnMedication 
 } from '@/lib/medication-schedule';
 import {
   WeatherLocation,
@@ -2097,28 +2096,17 @@ function getAvatarGradient(name: string, index: number) {
                           }}
                         >
                           <div style={{ flex: 1 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-                              <h4 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>{med.name}</h4>
-                              <span style={{ 
-                                fontSize: '0.75rem', 
-                                fontWeight: 700, 
-                                padding: '2px 8px', 
-                                borderRadius: '10px', 
-                                background: 'rgba(6, 182, 212, 0.12)', 
-                                color: 'var(--color-info)',
-                                border: '1px solid rgba(6, 182, 212, 0.25)'
-                              }}>
-                                {getScheduleDescription(med)}
-                              </span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                              <h4 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-text-primary)', margin: 0 }}>{med.name}</h4>
+                              {med.comments && (
+                                <span style={{ fontSize: '0.95rem', color: 'var(--color-warning)', fontWeight: 600, fontStyle: 'italic' }}>
+                                  💡 {med.comments}
+                                </span>
+                              )}
                             </div>
-                            <p style={{ fontSize: '1.05rem', color: 'var(--color-text-secondary)', fontWeight: 500, marginTop: '2px' }}>
+                            <p style={{ fontSize: '1.05rem', color: 'var(--color-text-secondary)', fontWeight: 500, marginTop: '3px', margin: 0 }}>
                               Dosis: {med.dose} | {med.frequency}
                             </p>
-                            {med.comments && (
-                              <p style={{ fontSize: '0.95rem', color: 'var(--color-warning)', marginTop: '4px', fontStyle: 'italic' }}>
-                                💡 {med.comments}
-                              </p>
-                            )}
                           </div>
                           
                           <button
@@ -2172,18 +2160,18 @@ function getAvatarGradient(name: string, index: number) {
                         }}
                       >
                         <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <h4 style={{ fontSize: '1.2rem', fontWeight: 700, color: isTaken ? 'var(--color-text-muted)' : 'var(--color-text-primary)' }}>{med.name}</h4>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <h4 style={{ fontSize: '1.2rem', fontWeight: 700, color: isTaken ? 'var(--color-text-muted)' : 'var(--color-text-primary)', margin: 0 }}>{med.name}</h4>
                             <span className="badge badge-warning" style={{ fontSize: '0.75rem', padding: '2px 8px' }}>Si precisa</span>
+                            {med.comments && (
+                              <span style={{ fontSize: '0.95rem', color: 'var(--color-warning)', fontWeight: 600, fontStyle: 'italic' }}>
+                                💡 {med.comments}
+                              </span>
+                            )}
                           </div>
-                          <p style={{ fontSize: '1.05rem', color: 'var(--color-text-secondary)', fontWeight: 500, marginTop: '2px' }}>
+                          <p style={{ fontSize: '1.05rem', color: 'var(--color-text-secondary)', fontWeight: 500, marginTop: '3px', margin: 0 }}>
                             Dosis: {med.dose} {med.frequency ? `| ${med.frequency}` : ''}
                           </p>
-                          {med.comments && (
-                            <p style={{ fontSize: '0.95rem', color: 'var(--color-warning)', marginTop: '4px', fontStyle: 'italic' }}>
-                              💡 {med.comments}
-                            </p>
-                          )}
                         </div>
 
                         <button
