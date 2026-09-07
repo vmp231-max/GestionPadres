@@ -2097,14 +2097,14 @@ function getAvatarGradient(name: string, index: number) {
                         >
                           <div style={{ flex: 1 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                              <h4 style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--color-text-primary)', margin: 0 }}>{med.name}</h4>
+                              <h4 style={{ fontSize: '1.45rem', fontWeight: 800, color: 'var(--color-text-primary)', margin: 0, letterSpacing: '-0.01em' }}>{med.name}</h4>
                               {med.comments && (
-                                <span style={{ fontSize: '0.95rem', color: 'var(--color-warning)', fontWeight: 600, fontStyle: 'italic' }}>
+                                <span style={{ fontSize: '1.2rem', color: '#fbbf24', fontWeight: 600, fontStyle: 'italic' }}>
                                   💡 {med.comments}
                                 </span>
                               )}
                             </div>
-                            <p style={{ fontSize: '1.05rem', color: 'var(--color-text-secondary)', fontWeight: 500, marginTop: '3px', margin: 0 }}>
+                            <p style={{ fontSize: '1.15rem', color: 'var(--color-text-secondary)', fontWeight: 500, marginTop: '4px', margin: 0 }}>
                               Dosis: {med.dose} | {med.frequency}
                             </p>
                           </div>
@@ -2161,15 +2161,15 @@ function getAvatarGradient(name: string, index: number) {
                       >
                         <div style={{ flex: 1 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                            <h4 style={{ fontSize: '1.2rem', fontWeight: 700, color: isTaken ? 'var(--color-text-muted)' : 'var(--color-text-primary)', margin: 0 }}>{med.name}</h4>
-                            <span className="badge badge-warning" style={{ fontSize: '0.75rem', padding: '2px 8px' }}>Si precisa</span>
+                            <h4 style={{ fontSize: '1.4rem', fontWeight: 800, color: isTaken ? 'var(--color-text-muted)' : 'var(--color-text-primary)', margin: 0, letterSpacing: '-0.01em' }}>{med.name}</h4>
+                            <span className="badge badge-warning" style={{ fontSize: '0.85rem', padding: '3px 10px' }}>Si precisa</span>
                             {med.comments && (
-                              <span style={{ fontSize: '0.95rem', color: 'var(--color-warning)', fontWeight: 600, fontStyle: 'italic' }}>
+                              <span style={{ fontSize: '1.2rem', color: '#fbbf24', fontWeight: 600, fontStyle: 'italic' }}>
                                 💡 {med.comments}
                               </span>
                             )}
                           </div>
-                          <p style={{ fontSize: '1.05rem', color: 'var(--color-text-secondary)', fontWeight: 500, marginTop: '3px', margin: 0 }}>
+                          <p style={{ fontSize: '1.15rem', color: 'var(--color-text-secondary)', fontWeight: 500, marginTop: '4px', margin: 0 }}>
                             Dosis: {med.dose} {med.frequency ? `| ${med.frequency}` : ''}
                           </p>
                         </div>
