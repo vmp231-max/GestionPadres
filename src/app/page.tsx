@@ -2003,12 +2003,12 @@ function getAvatarGradient(name: string, index: number) {
                       background: isToday ? 'rgba(6, 182, 212, 0.05)' : 'rgba(255, 255, 255, 0.02)'
                     }}
                   >
-                    {isToday && <span className="badge badge-info" style={{ alignSelf: 'flex-start' }}>Hoy</span>}
-                    <h3 style={{ fontSize: '1.4rem', fontWeight: 700 }}>{appt.title}</h3>
+                    {isToday && <span className="badge badge-info" style={{ alignSelf: 'flex-start', fontSize: '0.9rem', padding: '3px 10px', fontWeight: 700 }}>Hoy</span>}
+                    <h3 style={{ fontSize: '1.4rem', fontWeight: 700, color: 'var(--color-text-primary)', margin: 0 }}>{appt.title}</h3>
                     
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', color: 'var(--color-text-secondary)', fontSize: '1.1rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <Clock size={18} />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '1.4rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                        <Clock size={22} color="var(--color-info)" style={{ flexShrink: 0 }} />
                         <span>
                           {apptDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} a las{' '}
                           {apptDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })} hs
@@ -2016,15 +2016,15 @@ function getAvatarGradient(name: string, index: number) {
                       </div>
                       
                       {appt.location && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <MapPin size={18} />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '1.4rem', fontWeight: 700, color: 'var(--color-text-primary)' }}>
+                          <MapPin size={22} color="#f59e0b" style={{ flexShrink: 0 }} />
                           <span>{appt.location}</span>
                         </div>
                       )}
                     </div>
                     
                     {appt.description && (
-                      <p style={{ color: 'var(--color-text-muted)', fontSize: '1rem', marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '8px' }}>
+                      <p style={{ color: 'var(--color-text-secondary)', fontSize: '1.15rem', marginTop: '4px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '8px', margin: 0 }}>
                         {appt.description}
                       </p>
                     )}
